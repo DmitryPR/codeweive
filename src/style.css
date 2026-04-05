@@ -47,8 +47,27 @@ body {
   cursor: pointer;
   user-select: none;
 }
-#hud input[type="number"] {
-  width: 3rem;
+#hud .hud-rotations {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+#hud .hud-rotations-label {
+  min-width: 4.75rem;
+}
+#hud input[type="range"]#rotations {
+  width: 6.5rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: #a89cc4;
+  cursor: pointer;
+  touch-action: none;
+}
+#hud .hud-rotations-value {
+  min-width: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  color: #e8e4f0;
 }
 #clear,
 #save-png {

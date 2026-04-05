@@ -49,6 +49,7 @@ export function mount(root: HTMLElement): () => void {
 
   const mirrorEl = root.querySelector<HTMLInputElement>("#mirror")!;
   const rotationsEl = root.querySelector<HTMLInputElement>("#rotations")!;
+  const rotationsValueEl = root.querySelector<HTMLElement>("#rotations-value")!;
   const spiralEl = root.querySelector<HTMLInputElement>("#spiral")!;
   const clearEl = root.querySelector<HTMLButtonElement>("#clear")!;
   const savePngEl = root.querySelector<HTMLButtonElement>("#save-png")!;
@@ -60,14 +61,19 @@ export function mount(root: HTMLElement): () => void {
 
   function readHudIntoSettings(): void {
     silkSettings.symMirror = mirrorEl.checked;
-    silkSettings.symNumRotations = Math.max(
+    const n = Math.max(
       1,
       Math.min(12, Math.floor(Number(rotationsEl.value) || 1)),
     );
+    silkSettings.symNumRotations = n;
+    rotationsEl.value = String(n);
+    rotationsEl.setAttribute("aria-valuenow", String(n));
+    rotationsValueEl.textContent = String(n);
     silkSettings.spiralCopies = spiralEl.checked ? 30 : 1;
   }
 
   mirrorEl.addEventListener("change", readHudIntoSettings);
+  rotationsEl.addEventListener("input", readHudIntoSettings);
   rotationsEl.addEventListener("change", readHudIntoSettings);
   spiralEl.addEventListener("change", readHudIntoSettings);
 
