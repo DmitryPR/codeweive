@@ -1,23 +1,36 @@
 * {
   box-sizing: border-box;
 }
+html {
+  -webkit-tap-highlight-color: transparent;
+}
 html,
 body {
   margin: 0;
   height: 100%;
   background: #000;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 #app {
   position: relative;
   width: 100%;
   height: 100%;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .silk-stage {
   position: absolute;
   inset: 0;
   z-index: 0;
   transform-origin: 50% 50%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 #silk {
   display: block;
@@ -25,11 +38,18 @@ body {
   height: 100%;
   cursor: crosshair;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 #sparks {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .hud-dock {
   position: fixed;

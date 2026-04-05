@@ -517,6 +517,11 @@ export function mount(root: HTMLElement): () => void {
     endStroke();
   }
 
+  function onSilkContextMenu(e: Event): void {
+    e.preventDefault();
+  }
+  silkCanvas.addEventListener("contextmenu", onSilkContextMenu);
+
   silkCanvas.addEventListener("pointerdown", onPointerDown);
   silkCanvas.addEventListener("pointermove", onPointerMove);
   silkCanvas.addEventListener("pointerup", onPointerUp);
@@ -1235,6 +1240,7 @@ export function mount(root: HTMLElement): () => void {
     colorRing.removeEventListener("pointerdown", onColorRingPointerDown);
     colorToggle.removeEventListener("pointerdown", onTogglePointerDown);
     colorGrab.removeEventListener("pointerdown", onGrabPointerDown);
+    silkCanvas.removeEventListener("contextmenu", onSilkContextMenu);
     silkCanvas.removeEventListener("pointerdown", onPointerDown);
     silkCanvas.removeEventListener("pointermove", onPointerMove);
     silkCanvas.removeEventListener("pointerup", onPointerUp);
