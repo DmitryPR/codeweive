@@ -40,13 +40,3 @@ npm run build   # output in dist/
 ```
 
 See [plan/SITE-BREAKDOWN.md](plan/SITE-BREAKDOWN.md) for site stack notes and visual QA checklist, [ALGORITHM.md](ALGORITHM.md) for the mathematical model, and [PERFORMANCE.md](PERFORMANCE.md) for scalability limits and cost drivers.
-
-## Git
-
-`node_modules/` and `dist/` are gitignored. After `npm install` (and optionally `npm run build`), stage everything with `git add -A` and confirm `git status` does not list those folders. Example initial commit:
-
-```bash
-git add -A
-git branch -M main   # optional
-git commit -m "feat: initial codeweive port (TypeScript, Vite, canvas)"
-```
