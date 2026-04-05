@@ -79,10 +79,39 @@ export function mount(root: HTMLElement): () => void {
   sparksCanvas.setAttribute("aria-hidden", "true");
   silkStage.appendChild(sparksCanvas);
 
+  const undoEl = root.querySelector<HTMLButtonElement>("#undo")!;
+
   const silkUtil = new CanvasUtil(silkCanvas);
   const sparksUtil = new CanvasUtil(sparksCanvas);
 
+  const silkCtx = silkCanvas.getContext("2d");
+  if (!silkCtx) throw new Error("silk 2d");
+  const sparks = new Sparks(sparksCanvas);
+  const ambient = createAmbientSound();
+
+  /** Silk-layer snapshots (backing-store pixels). Sparks are cleared on undo (see Sparks.frame). */
+  const UNDO_DEPTH = 12;
+  const undoStack: ImageData[] = [];
+
+  function updateUndoButton(): void {
+    undoEl.disabled = undoStack.length === 0;
+  }
+
+  function pushUndoSnapshot(): void {
+    const w = silkCanvas.width;
+    const h = silkCanvas.height;
+    if (w === 0 || h === 0) return;
+    const data = silkCtx.getImageData(0, 0, w, h);
+    undoStack.push(
+      new ImageData(new Uint8ClampedArray(data.data), data.width, data.height),
+    );
+    while (undoStack.length > UNDO_DEPTH) undoStack.shift();
+    updateUndoButton();
+  }
+
   const resize = (): void => {
+    undoStack.length = 0;
+    updateUndoButton();
     silkUtil.resizeToWindow();
     sparksUtil.resizeCanvas(silkUtil.widthOnScreen, silkUtil.heightOnScreen);
     silkUtil.fillSolid("#000");
@@ -98,11 +127,6 @@ export function mount(root: HTMLElement): () => void {
 
   resize();
   window.addEventListener("resize", resize);
-
-  const silkCtx = silkCanvas.getContext("2d");
-  if (!silkCtx) throw new Error("silk 2d");
-  const sparks = new Sparks(sparksCanvas);
-  const ambient = createAmbientSound();
 
   const defaultPalette = SILK_COLOR_PRESETS[0]!;
   let silkSettings: SilkStatePartial = {
@@ -209,6 +233,7 @@ export function mount(root: HTMLElement): () => void {
   }
 
   function startStroke(): void {
+    pushUndoSnapshot();
     readHudIntoSettings();
     if (currentStroke) {
       currentStroke.complete();
@@ -270,7 +295,8 @@ export function mount(root: HTMLElement): () => void {
   silkCanvas.addEventListener("pointercancel", onPointerUp);
   silkCanvas.addEventListener("lostpointercapture", onLostPointerCapture);
 
-  clearEl.addEventListener("click", () => {
+  function onClearClick(): void {
+    pushUndoSnapshot();
     silkUtil.fillSolid("#000");
     sparks.points.length = 0;
     strokes.length = 0;
@@ -284,7 +310,10 @@ export function mount(root: HTMLElement): () => void {
     lastPlateCoverage = 0;
     soundDitherX = 0;
     soundDitherY = 0;
-  });
+  }
+
+  clearEl.addEventListener("click", onClearClick);
+  undoEl.addEventListener("click", performUndo);
 
   function updateAutoDrawPresetDisabled(): void {
     autoDrawPresetEl.disabled = !autoDrawEl.checked;
@@ -779,6 +808,33 @@ export function mount(root: HTMLElement): () => void {
   let soundDitherX = 0;
   let soundDitherY = 0;
 
+  function performUndo(): void {
+    if (undoStack.length === 0) return;
+    const snap = undoStack.pop()!;
+    silkCtx.putImageData(snap, 0, 0);
+    strokes.length = 0;
+    currentStroke = null;
+    inputIsActive = false;
+    pinputX = null;
+    pinputY = null;
+    sparks.points.length = 0;
+    const sctx = sparksCanvas.getContext("2d");
+    if (sctx) {
+      sctx.save();
+      sctx.globalCompositeOperation = "source-over";
+      sctx.globalAlpha = 1;
+      sctx.clearRect(0, 0, sparksCanvas.width, sparksCanvas.height);
+      sctx.restore();
+    }
+    lastSilkLuma = 0.02;
+    lastPlateMeanF = 0;
+    lastPlateRms = 0;
+    lastPlateCoverage = 0;
+    soundDitherX = 0;
+    soundDitherY = 0;
+    updateUndoButton();
+  }
+
   function tick(): void {
     const startTime = Date.now();
     const dt = (startTime - endTime) / 16;
@@ -934,6 +990,8 @@ export function mount(root: HTMLElement): () => void {
     silkCanvas.removeEventListener("pointerup", onPointerUp);
     silkCanvas.removeEventListener("pointercancel", onPointerUp);
     silkCanvas.removeEventListener("lostpointercapture", onLostPointerCapture);
+    clearEl.removeEventListener("click", onClearClick);
+    undoEl.removeEventListener("click", performUndo);
     autoDrawEl.removeEventListener("change", onAutoDrawChange);
     autoDrawPresetEl.removeEventListener("change", onAutoDrawPresetChange);
     ambientSoundEl.removeEventListener("change", onAmbientSoundChange);

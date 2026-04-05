@@ -129,6 +129,7 @@ body {
   font-variant-numeric: tabular-nums;
   color: #e8e4f0;
 }
+#undo,
 #clear,
 #save-png {
   cursor: pointer;
@@ -137,6 +138,10 @@ body {
   border: 1px solid #5a5370;
   background: #2a2638;
   color: #eee;
+}
+#undo:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Left color bubble (Silk-style presets)
