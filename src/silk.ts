@@ -180,7 +180,14 @@ export class Silk {
 
   frame(): void {
     this.frameTime++;
-    for (let i = 0; i < this.drawsPerFrame; i++) {
+    const nInstr = Math.max(1, this.drawInstructions.length);
+    /* High symmetry × spiral × mirror multiplies stroke work per step; fewer physics
+       substeps keeps frame time stable (original fixed drawsPerFrame=5 explodes here). */
+    const stepsPerFrame = Math.max(
+      1,
+      Math.min(this.drawsPerFrame, Math.floor(200 / nInstr)),
+    );
+    for (let i = 0; i < stepsPerFrame; i++) {
       this.step(true);
     }
   }
@@ -274,12 +281,17 @@ export class Silk {
       const rotateBy = rotationIndex * rotateAmount;
       for (let spiralIndex = 0; spiralIndex < this.spiralCopies; spiralIndex++) {
         const pc = spiralIndex / this.spiralCopies;
+        const spiralScale = spiralScaleScale(pc) * this.brushScale;
+        /* Outer spiral arms shrink to ~0; skip paths that would not visibly contribute. */
+        if (spiralScale * this.drawScale < 0.004) {
+          continue;
+        }
         const instr: DrawInstruction = {
           rotationIndex,
           spiralIndex,
           cos: Math.cos(rotateBy + this.spiralAngle * pc),
           sin: Math.sin(rotateBy + this.spiralAngle * pc),
-          scale: spiralScaleScale(pc) * this.brushScale,
+          scale: spiralScale,
           original: rotationIndex === 0 && spiralIndex === 0,
         };
         this.drawInstructions.push(instr);

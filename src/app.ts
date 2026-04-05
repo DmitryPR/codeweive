@@ -110,9 +110,8 @@ export function mount(root: HTMLElement): () => void {
     const h = silkCanvas.height;
     if (w === 0 || h === 0) return;
     const data = silkCtx.getImageData(0, 0, w, h);
-    undoStack.push(
-      new ImageData(new Uint8ClampedArray(data.data), data.width, data.height),
-    );
+    /* getImageData already returns a copy; avoid duplicating the full buffer. */
+    undoStack.push(data);
     while (undoStack.length > UNDO_DEPTH) undoStack.shift();
     updateUndoButton();
   }
@@ -529,7 +528,8 @@ export function mount(root: HTMLElement): () => void {
   silkCanvas.addEventListener("lostpointercapture", onLostPointerCapture);
 
   function onClearClick(): void {
-    pushUndoSnapshot();
+    undoStack.length = 0;
+    updateUndoButton();
     silkUtil.fillSolid("#000");
     sparks.points.length = 0;
     strokes.length = 0;
@@ -1134,7 +1134,8 @@ export function mount(root: HTMLElement): () => void {
         ambientColorAcc = 0;
         const cw = silkCanvas.width;
         const ch = silkCanvas.height;
-        if (cw >= 16 && ch >= 16) {
+        /* Full-frame readback stalls the GPU; skip while a stroke is active. */
+        if (cw >= 16 && ch >= 16 && !inputIsActive) {
           try {
             const id = silkCtx.getImageData(0, 0, cw, ch);
             const a = analyzeSilkImageData(id);
