@@ -1,15 +1,26 @@
 /**
  * Map pixels on the silk canvas to the 7 HUD color presets, then drive music (12-TET).
  *
- * **Theory:** Each preset is a **fixed scale degree** (1…7) of a **major** collection:
- * intervals from tonic `[0,2,4,5,7,9,11]` semitones (same as C major when tonic = C).
- * **Tonic pitch class** is **transposed** when **several** colors are active: rounded
- * weighted average of the **reference** chroma (tonic=C case) picks the key center, then
- * every preset’s note is `(tonic + degreeStep) mod 12`. **Solo** color → tonic 0 so
- * absolute pitches match the legacy “always C major” mapping.
+ * **Theory:** Each preset is scale degree 1…7 of a **diatonic seven-note set**:
+ * - **Major (Ionian):** `[0,2,4,5,7,9,11]` — bright / balanced.
+ * - **Natural minor (Aeolian):** `[0,2,3,5,7,8,10]` — same “white key” cycle, different tonic feel.
+ *
+ * **Tonic pitch class** (movable key): with several colors, rounded weighted mean of those
+ * presets’ **reference** chroma in C for the active **mode** picks the key center; each note is
+ * `(tonic + degreeStep) mod 12`. **Solo** color → tonic 0 (legacy absolute mapping).
+ *
+ * **Mode:** `inferScaleModeFromVisuals` picks minor when the canvas is dark or center-gray “salt”
+ * (moody), else major — you can override with `AmbientHints.scaleMode`.
  */
 
 import { SILK_COLOR_PRESETS } from "./silk-colors";
+
+/** Diatonic seven-note collection for preset degrees 1…7 (same order as HUD presets). */
+export type ScaleMode = "major" | "naturalMinor";
+
+function mod12(n: number): number {
+  return ((n % 12) + 12) % 12;
+}
 
 export type ColorMusicAnalysis = {
   /** Bit i set if preset i (see `SILK_COLOR_PRESETS`) has visible presence */
@@ -51,8 +62,28 @@ function dist2(a: RGB, b: RGB): number {
  */
 export const MAJOR_DEGREE_STEPS: readonly number[] = [0, 2, 4, 5, 7, 9, 11];
 
+/** Natural minor (Aeolian) from tonic — e.g. A minor shares C major’s pitch classes, different center. */
+export const NATURAL_MINOR_DEGREE_STEPS: readonly number[] = [0, 2, 3, 5, 7, 8, 10];
+
 /** @alias MAJOR_DEGREE_STEPS — legacy name; chroma when tonic is C. */
 export const COLOR_INDEX_TO_SEMITONE: readonly number[] = MAJOR_DEGREE_STEPS;
+
+export function degreeSteps(mode: ScaleMode): readonly number[] {
+  return mode === "naturalMinor" ? NATURAL_MINOR_DEGREE_STEPS : MAJOR_DEGREE_STEPS;
+}
+
+/**
+ * Heuristic: darker canvas or gray-heavy center → **natural minor**; otherwise **major**.
+ */
+export function inferScaleModeFromVisuals(
+  canvasBrightness: number | undefined,
+  centerGraySalt: boolean | undefined,
+): ScaleMode {
+  if (centerGraySalt) return "naturalMinor";
+  const b = canvasBrightness ?? 0.1;
+  if (b < 0.1) return "naturalMinor";
+  return "major";
+}
 
 /** Per-pixel fuzzy assignment to all 7 presets (inverse-distance²); sums to 1. */
 function softPresetWeightsForRgb(r: number, g: number, b: number): number[] {
@@ -194,63 +225,73 @@ function activePresetIndices(mask: number, weights?: readonly number[]): number[
 }
 
 /**
- * Tonic pitch class (0–11) for **movable** major: with **one** active hue, returns **0**
+ * Tonic pitch class (0–11) for **movable** key: with **one** active hue, returns **0**
  * so solo presets keep legacy absolute pitches. With **two or more**, returns rounded
- * weighted mean of reference chroma (`MAJOR_DEGREE_STEPS` as C-key pitch classes).
+ * weighted mean of reference chroma for `mode` (steps in C as if tonic were C).
  */
 export function tonicPitchClassFromAnalysis(
   mask: number,
   weights?: readonly number[],
+  mode: ScaleMode = "major",
 ): number {
   const act = activePresetIndices(mask, weights);
   if (act.length <= 1) return 0;
 
+  const steps = degreeSteps(mode);
   let num = 0;
   let den = 0;
   if (weights && weights.length >= 7) {
     for (const i of act) {
       const w = weights[i] ?? 0;
-      num += w * MAJOR_DEGREE_STEPS[i]!;
+      num += w * steps[i]!;
       den += w;
     }
   }
   if (den < 1e-9) {
     for (const i of act) {
-      num += MAJOR_DEGREE_STEPS[i]!;
+      num += steps[i]!;
     }
     den = act.length;
   }
 
-  return ((Math.round(num / den) % 12) + 12) % 12;
+  return mod12(Math.round(num / den));
 }
 
-export function presetPitchClass(presetIndex: number, tonicPc: number): number {
-  const step = MAJOR_DEGREE_STEPS[presetIndex];
+export function presetPitchClass(
+  presetIndex: number,
+  tonicPc: number,
+  mode: ScaleMode = "major",
+): number {
+  const step = degreeSteps(mode)[presetIndex];
   if (step == null) return 0;
-  return (tonicPc + step) % 12;
+  return mod12(tonicPc + step);
 }
 
 /** Weighted average pitch class (fractional) under the current movable tonic. */
 export function centroidSemitoneFromWeights(
   weights: readonly number[],
   mask: number,
+  mode: ScaleMode = "major",
 ): number {
   if (weights.length < 7) return 0;
-  const tonic = tonicPitchClassFromAnalysis(mask, weights);
+  const tonic = tonicPitchClassFromAnalysis(mask, weights, mode);
   let s = 0;
   for (let i = 0; i < 7; i++) {
-    s += (weights[i] ?? 0) * presetPitchClass(i, tonic);
+    s += (weights[i] ?? 0) * presetPitchClass(i, tonic, mode);
   }
   return s;
 }
 
 /** Pitch classes (0–11) for mask bits, sorted — transposed by movable tonic. */
-export function semitonesFromPresetMask(mask: number): number[] {
-  const tonic = tonicPitchClassFromAnalysis(mask);
+export function semitonesFromPresetMask(
+  mask: number,
+  mode: ScaleMode = "major",
+): number[] {
+  const tonic = tonicPitchClassFromAnalysis(mask, undefined, mode);
   const out: number[] = [];
   for (let i = 0; i < 7; i++) {
     if (mask & (1 << i)) {
-      out.push(presetPitchClass(i, tonic));
+      out.push(presetPitchClass(i, tonic, mode));
     }
   }
   out.sort((a, b) => a - b);
@@ -265,18 +306,79 @@ export function semitonesFromWeightsAndMask(
   weights: readonly number[] | undefined,
   mask: number,
   threshold = 0.052,
+  mode: ScaleMode = "major",
 ): number[] {
-  const tonic = tonicPitchClassFromAnalysis(mask, weights);
+  const tonic = tonicPitchClassFromAnalysis(mask, weights, mode);
   const semis = new Set<number>();
   if (weights && weights.length >= 7) {
     for (let i = 0; i < 7; i++) {
       if ((weights[i] ?? 0) >= threshold) {
-        semis.add(presetPitchClass(i, tonic));
+        semis.add(presetPitchClass(i, tonic, mode));
       }
     }
   }
   if (semis.size === 0) {
-    return semitonesFromPresetMask(mask);
+    return semitonesFromPresetMask(mask, mode);
   }
   return [...semis].sort((a, b) => a - b);
+}
+
+export type WeightedPitchClass = {
+  presetIndex: number;
+  weight: number;
+  pitchClass: number;
+};
+
+/**
+ * Strongest distinct preset colors → pitch classes in the current movable key.
+ * Used to sound **combinations** literally (several quiet partials under the lead).
+ */
+export function topWeightedPitchClasses(
+  weights: readonly number[] | undefined,
+  mask: number,
+  maxCount: number,
+  minWeight = 0.055,
+  mode: ScaleMode = "major",
+): WeightedPitchClass[] {
+  const tonic = tonicPitchClassFromAnalysis(mask, weights, mode);
+  if (!weights || weights.length < 7) {
+    const pool = semitonesFromPresetMask(mask, mode);
+    return pool.slice(0, maxCount).map((pc, i) => ({
+      presetIndex: -1,
+      weight: 0.18 - i * 0.02,
+      pitchClass: pc,
+    }));
+  }
+
+  const ranked: WeightedPitchClass[] = [];
+  for (let i = 0; i < 7; i++) {
+    const w = weights[i] ?? 0;
+    if (w < minWeight) continue;
+    ranked.push({
+      presetIndex: i,
+      weight: w,
+      pitchClass: presetPitchClass(i, tonic, mode),
+    });
+  }
+  ranked.sort((a, b) => b.weight - a.weight);
+
+  const seen = new Set<number>();
+  const out: WeightedPitchClass[] = [];
+  for (const r of ranked) {
+    const pc = mod12(r.pitchClass);
+    if (seen.has(pc)) continue;
+    seen.add(pc);
+    out.push({ ...r, pitchClass: pc });
+    if (out.length >= maxCount) break;
+  }
+
+  if (out.length === 0) {
+    const pool = semitonesFromWeightsAndMask(weights, mask, 0.052, mode);
+    return pool.slice(0, maxCount).map((pc) => ({
+      presetIndex: -1,
+      weight: 0.16,
+      pitchClass: pc,
+    }));
+  }
+  return out;
 }

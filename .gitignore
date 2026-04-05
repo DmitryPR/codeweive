@@ -8,3 +8,6 @@ npm-debug.log*
 !.env.example
 *.tsbuildinfo
 coverage
+
+# Generated local previews only (not for the repo). Regenerate: npm run generate:ambient-demos
+public/audio/ambient-demos/*.mp3

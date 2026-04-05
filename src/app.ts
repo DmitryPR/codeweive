@@ -1,5 +1,9 @@
 import { createAmbientSound } from "./ambient-sound";
-import { analyzeSilkImageData, centroidSemitoneFromWeights } from "./color-music";
+import {
+  analyzeSilkImageData,
+  centroidSemitoneFromWeights,
+  inferScaleModeFromVisuals,
+} from "./color-music";
 import { plateCouplingFromImageData } from "./plate-coupling";
 import type { StandingWaveParams } from "./standing-waves";
 import { CanvasUtil } from "./canvas-util";
@@ -1172,11 +1176,16 @@ export function mount(root: HTMLElement): () => void {
                   motionPlate * 0.12,
               ),
             );
+            const scaleModeWave = inferScaleModeFromVisuals(
+              lastSilkLuma,
+              a.centerGraySalt,
+            );
             const swp: StandingWaveParams = {
               timeSec: performance.now() / 1000,
               centroidSemitone: centroidSemitoneFromWeights(
                 a.presetWeights,
                 a.mask,
+                scaleModeWave,
               ),
               distinctCount: Math.max(1, a.distinctCount),
               symRotations: silkSettings.symNumRotations ?? 1,
@@ -1192,6 +1201,10 @@ export function mount(root: HTMLElement): () => void {
         }
       }
       readHudIntoSettings();
+      const scaleMode = inferScaleModeFromVisuals(
+        lastSilkLuma,
+        lastCenterGraySalt,
+      );
       ambient.update({
         motion,
         energy,
@@ -1200,6 +1213,7 @@ export function mount(root: HTMLElement): () => void {
         colorDistinctCount: lastColorDistinct,
         centerGraySalt: lastCenterGraySalt,
         colorPresetWeights: lastColorWeights,
+        scaleMode,
         symRotations: silkSettings.symNumRotations ?? 1,
         plateMeanField: lastPlateMeanF,
         plateRms: lastPlateRms,

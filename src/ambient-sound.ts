@@ -8,10 +8,24 @@
  * No high-band oscillators; master low-pass keeps everything dark and smooth.
  */
 
+import {
+  hzFromPitchClass,
+  pickDiatonicTriad,
+  rippleSemitonesToNextChordTone,
+  triadContainsMelody,
+  triadThirdSemitonesFromRoot,
+  triadsForKey,
+  type DiatonicTriad,
+  AMBIENT_ROOT_HZ,
+} from "./ambient-harmony";
 import { getPhraseDegrees, getPhraseCount } from "./ambient-phrases";
 import {
   centroidSemitoneFromWeights,
+  inferScaleModeFromVisuals,
   semitonesFromWeightsAndMask,
+  tonicPitchClassFromAnalysis,
+  topWeightedPitchClasses,
+  type ScaleMode,
 } from "./color-music";
 import {
   sampleStandingWaveField,
@@ -47,10 +61,21 @@ export type AmbientHints = {
   plateRms?: number;
   /** Share of canvas samples with ink (strided) */
   plateCoverage?: number;
+  /**
+   * `phrase` — stepped melody from `ambient-phrases` through the color pool.
+   * `blend` (default) — **continuous** pitch from weighted color centroid + up to three
+   * quiet partials for the strongest presets (literal “combination” tones).
+   */
+  colorMelodyMode?: "phrase" | "blend";
+  /** Override diatonic collection: major vs natural minor (default: inferred from canvas). */
+  scaleMode?: ScaleMode;
 };
 
 /** C2 — deep register; melody and flow stay sub / low-mid only */
-const ROOT_HZ = 65.41;
+const ROOT_HZ = AMBIENT_ROOT_HZ;
+
+/** Default: centroid + multi-partial “blend”; set hints.colorMelodyMode to `"phrase"` for the old line. */
+const DEFAULT_COLOR_MELODY_MODE: "phrase" | "blend" = "blend";
 
 function getAudioContextCtor(): typeof AudioContext | null {
   const w = window as typeof window & { webkitAudioContext?: typeof AudioContext };
@@ -91,6 +116,13 @@ export function createAmbientSound(): {
   let fluidLp: BiquadFilterNode | null = null;
   let fluidGain: GainNode | null = null;
 
+  let comboOsc0: OscillatorNode | null = null;
+  let comboGain0: GainNode | null = null;
+  let comboOsc1: OscillatorNode | null = null;
+  let comboGain1: GainNode | null = null;
+  let comboOsc2: OscillatorNode | null = null;
+  let comboGain2: GainNode | null = null;
+
   const toStop: AudioScheduledSourceNode[] = [];
 
   let enabled = false;
@@ -111,6 +143,11 @@ export function createAmbientSound(): {
   let noteInPhrase = 0;
   let lastNoteMs = 0;
   let lastMelodyHz = ROOT_HZ;
+  let lastMelodyPc = 0;
+  let harmonyTriad: DiatonicTriad = triadsForKey(0, "major")[0]!;
+  let chordAgeNotes = 0;
+  let lastChordPickMs = 0;
+  let lastFlowRootHz = ROOT_HZ;
   let lastDriveNow = performance.now();
   let flowPhaseAccum = 0;
 
@@ -164,7 +201,7 @@ export function createAmbientSound(): {
 
     flowOsc2 = ctx.createOscillator();
     flowOsc2.type = "sine";
-    flowOsc2.frequency.value = ROOT_HZ * 1.498;
+    flowOsc2.frequency.value = ROOT_HZ * Math.pow(2, 4 / 12);
     flowGain2 = ctx.createGain();
     flowGain2.gain.value = 0.028;
     flowOsc2.connect(flowGain2);
@@ -206,6 +243,36 @@ export function createAmbientSound(): {
     melodyRippleOsc.frequency.value = ROOT_HZ * 1.498307077;
     melodyRippleOsc.start();
     toStop.push(melodyRippleOsc);
+
+    comboOsc0 = ctx.createOscillator();
+    comboOsc0.type = "sine";
+    comboOsc0.frequency.value = ROOT_HZ;
+    comboGain0 = ctx.createGain();
+    comboGain0.gain.value = 0;
+    comboOsc0.connect(comboGain0);
+    comboGain0.connect(mix);
+    comboOsc0.start();
+    toStop.push(comboOsc0);
+
+    comboOsc1 = ctx.createOscillator();
+    comboOsc1.type = "sine";
+    comboOsc1.frequency.value = ROOT_HZ;
+    comboGain1 = ctx.createGain();
+    comboGain1.gain.value = 0;
+    comboOsc1.connect(comboGain1);
+    comboGain1.connect(mix);
+    comboOsc1.start();
+    toStop.push(comboOsc1);
+
+    comboOsc2 = ctx.createOscillator();
+    comboOsc2.type = "sine";
+    comboOsc2.frequency.value = ROOT_HZ;
+    comboGain2 = ctx.createGain();
+    comboGain2.gain.value = 0;
+    comboOsc2.connect(comboGain2);
+    comboGain2.connect(mix);
+    comboOsc2.start();
+    toStop.push(comboOsc2);
 
     const nSamp = Math.max(2048, Math.floor(ctx.sampleRate * 1.25));
     const nb = ctx.createBuffer(1, nSamp, ctx.sampleRate);
@@ -253,6 +320,11 @@ export function createAmbientSound(): {
       lastMelodyHz = ROOT_HZ;
       lastDriveNow = performance.now();
       flowPhaseAccum = 0;
+      harmonyTriad = triadsForKey(0, "major")[0]!;
+      chordAgeNotes = 0;
+      lastChordPickMs = performance.now();
+      lastFlowRootHz = ROOT_HZ;
+      lastMelodyPc = 0;
       const t = ctx.currentTime;
       melodyOsc.frequency.setValueAtTime(ROOT_HZ, t);
       if (melodyRippleOsc) {
@@ -295,6 +367,12 @@ export function createAmbientSound(): {
       !melodyDelayFb ||
       !melodyRippleOsc ||
       !melodyRippleGain ||
+      !comboOsc0 ||
+      !comboGain0 ||
+      !comboOsc1 ||
+      !comboGain1 ||
+      !comboOsc2 ||
+      !comboGain2 ||
       !fluidLp ||
       !fluidGain
     ) {
@@ -312,13 +390,16 @@ export function createAmbientSound(): {
 
     const mask = hints.colorPresetMask ?? 0;
     const weights = hints.colorPresetWeights;
-    const pool = semitonesFromWeightsAndMask(weights, mask);
+    const scaleMode: ScaleMode =
+      hints.scaleMode ??
+      inferScaleModeFromVisuals(hints.canvasBrightness, hints.centerGraySalt);
+    const pool = semitonesFromWeightsAndMask(weights, mask, 0.052, scaleMode);
     const k = Math.max(1, Math.min(7, hints.colorDistinctCount ?? pool.length));
     const distinctForWave = Math.max(1, hints.colorDistinctCount ?? pool.length);
 
     const centroidRaw =
       weights && weights.length >= 7
-        ? centroidSemitoneFromWeights(weights, mask)
+        ? centroidSemitoneFromWeights(weights, mask, scaleMode)
         : pool.reduce((a, b) => a + b, 0) / Math.max(1, pool.length);
     smoothCentroidSemi = smoothCentroidSemi * 0.92 + centroidRaw * 0.08;
 
@@ -373,45 +454,6 @@ export function createAmbientSound(): {
     smoothWaveVel =
       smoothWaveVel * 0.8 + Math.min(2.5, Math.abs(velListen)) * 0.2;
 
-    /** Flow: slow water-like drift, all energy sub ~200 Hz before filter */
-    const drift0 = 3 * Math.sin(now * 0.00022);
-    const drift1 = 3.5 * Math.sin(now * 0.00027 + 1.1);
-    const drift2 = 2.5 * Math.sin(now * 0.00024 + 2.2);
-    const baseHz = ROOT_HZ * Math.pow(2, smoothCentroidSemi / 12);
-    flowPhaseAccum +=
-      2 *
-        Math.PI *
-        baseHz *
-        dtSec *
-        (1 + 0.13 * smoothWaveField + 0.09 * smoothPlateRms) +
-      2 * Math.PI * lastMelodyHz * dtSec * 0.065;
-    if (flowPhaseAccum > 12_000) {
-      flowPhaseAccum -= Math.floor(flowPhaseAccum / (2 * Math.PI)) * 2 * Math.PI;
-    }
-
-    flowOsc0.frequency.setTargetAtTime(baseHz * 0.5, t, 0.55);
-    flowOsc1.frequency.setTargetAtTime(baseHz, t, 0.5);
-    flowOsc2.frequency.setTargetAtTime(baseHz * 1.498307077, t, 0.48);
-    const plateDetune = smoothPlateMean * 4.2 + smoothPlateRms * 2.8;
-    flowOsc0.detune.setTargetAtTime(drift0 + smoothMotion * 4 + plateDetune * 0.35, t, 0.25);
-    flowOsc1.detune.setTargetAtTime(
-      drift1 - smoothBright * 3 + plateDetune * 0.55,
-      t,
-      0.25,
-    );
-    flowOsc2.detune.setTargetAtTime(drift2 + smoothEnergy * 3.5 + plateDetune * 0.4, t, 0.25);
-
-    const flowBed = (0.28 + 0.72 * presence) * 0.95;
-    const grayFlowBoost = hints.centerGraySalt ? 1.07 : 1;
-    /** Standing-wave nodal/antinodal breathing + stroke–plate overlap */
-    const plateGain = 1 + smoothPlateCov * 0.14 + smoothPlateRms * 0.11;
-    const platePhase = 1 + smoothPlateMean * 0.1;
-    const wMod = (0.86 + 0.22 * (0.5 + 0.5 * fCenter)) * platePhase;
-    const wMod2 = (0.9 + 0.18 * (0.5 + 0.5 * smoothWaveField)) * plateGain;
-    flowGain0.gain.setTargetAtTime(0.038 * flowBed * wMod, t, 0.18);
-    flowGain1.gain.setTargetAtTime(0.032 * flowBed * grayFlowBoost * wMod2, t, 0.18);
-    flowGain2.gain.setTargetAtTime(0.026 * flowBed * wMod * (0.97 + smoothPlateRms * 0.06), t, 0.18);
-
     /** Filtered noise: “fluid” agitation — stronger where strokes ride the mode */
     const plateFluid =
       0.42 +
@@ -450,25 +492,152 @@ export function createAmbientSound(): {
       1100 - activity * 260 - (k - 1) * 20 - smoothPlateRms * 70,
     );
 
-    if (now - lastNoteMs >= stepMs) {
-      lastNoteMs = now;
-      const phrase = getPhraseDegrees(phraseIndex);
-      const deg = phrase[noteInPhrase] ?? 0;
-      noteInPhrase++;
-      if (noteInPhrase >= phrase.length) {
-        noteInPhrase = 0;
-        phraseIndex = (phraseIndex + 1) % getPhraseCount();
+    const melodyMode = hints.colorMelodyMode ?? DEFAULT_COLOR_MELODY_MODE;
+    const tonicPc = tonicPitchClassFromAnalysis(mask, weights, scaleMode);
+
+    if (melodyMode === "phrase") {
+      if (now - lastNoteMs >= stepMs) {
+        lastNoteMs = now;
+        const phrase = getPhraseDegrees(phraseIndex);
+        const phraseLen = phrase.length;
+        const wasAtPhraseStart = noteInPhrase === 0;
+        const phraseClosing = phraseLen > 0 && noteInPhrase >= phraseLen - 1;
+        const deg = phrase[noteInPhrase] ?? 0;
+        noteInPhrase++;
+        if (noteInPhrase >= phrase.length) {
+          noteInPhrase = 0;
+          phraseIndex = (phraseIndex + 1) % getPhraseCount();
+        }
+        const phraseJustStarted = wasAtPhraseStart;
+
+        const pl = pool.length;
+        const poolIdx = pl > 0 ? deg % pl : 0;
+        const melodyPc = ((((pool[poolIdx] ?? 0) % 12) + 12) % 12) as number;
+        lastMelodyPc = melodyPc;
+
+        const minHold = 2;
+        const mustRepick =
+          chordAgeNotes >= minHold || !triadContainsMelody(harmonyTriad, melodyPc);
+        if (mustRepick) {
+          const prev = harmonyTriad;
+          harmonyTriad = pickDiatonicTriad({
+            tonicPc,
+            melodyPc,
+            previous: prev,
+            chordAgeNotes,
+            minHoldNotes: minHold,
+            phraseJustStarted,
+            phraseClosing,
+            scaleMode,
+          });
+          if (
+            harmonyTriad.rootPc !== prev.rootPc ||
+            harmonyTriad.roman !== prev.roman
+          ) {
+            chordAgeNotes = 0;
+          }
+        }
+        chordAgeNotes++;
+
+        let semi = pool[poolIdx] ?? 0;
+        const frac = smoothCentroidSemi - Math.floor(smoothCentroidSemi);
+        semi += frac * 0.08 + smoothPlateMean * 0.045;
+        /** No octave up — keep phrase entirely in the deep register */
+        const hz = ROOT_HZ * Math.pow(2, semi / 12);
+        lastMelodyHz = hz;
+        melodyOsc.frequency.setTargetAtTime(hz, t, 0.18);
       }
-      const pl = pool.length;
-      const poolIdx = pl > 0 ? deg % pl : 0;
-      let semi = pool[poolIdx] ?? 0;
-      const frac = smoothCentroidSemi - Math.floor(smoothCentroidSemi);
-      semi += frac * 0.35 + smoothPlateMean * 0.14;
-      /** No octave up — keep phrase entirely in the deep register */
-      const hz = ROOT_HZ * Math.pow(2, semi / 12);
-      lastMelodyHz = hz;
-      melodyOsc.frequency.setTargetAtTime(hz, t, 0.18);
+    } else {
+      const melodyPc = ((Math.round(smoothCentroidSemi) % 12) + 12) % 12;
+      lastMelodyPc = melodyPc;
+
+      const minChordMs = 1320;
+      const mustRepick =
+        !triadContainsMelody(harmonyTriad, melodyPc) ||
+        now - lastChordPickMs >= minChordMs;
+      if (mustRepick) {
+        const prev = harmonyTriad;
+        harmonyTriad = pickDiatonicTriad({
+          tonicPc,
+          melodyPc,
+          previous: prev,
+          chordAgeNotes: Math.min(12, Math.floor((now - lastChordPickMs) / 200)),
+          minHoldNotes: 2,
+          phraseJustStarted: false,
+          phraseClosing: false,
+          scaleMode,
+        });
+        if (
+          harmonyTriad.rootPc !== prev.rootPc ||
+          harmonyTriad.roman !== prev.roman
+        ) {
+          chordAgeNotes = 0;
+        }
+        lastChordPickMs = now;
+      }
+
+      const semi =
+        smoothCentroidSemi +
+        smoothPlateMean * 0.055 +
+        smoothWaveField * 0.035;
+      lastMelodyHz = ROOT_HZ * Math.pow(2, semi / 12);
+      melodyOsc.frequency.setTargetAtTime(lastMelodyHz, t, 0.42);
     }
+
+    /** Flow: diatonic triad (sub, root, third) + smooth centroid lean; phase tracks chord root */
+    const drift0 = 3 * Math.sin(now * 0.00022);
+    const drift1 = 3.5 * Math.sin(now * 0.00027 + 1.1);
+    const drift2 = 2.5 * Math.sin(now * 0.00024 + 2.2);
+    const rootHz = hzFromPitchClass(harmonyTriad.rootPc);
+    const thirdMul = Math.pow(
+      2,
+      triadThirdSemitonesFromRoot(harmonyTriad.quality) / 12,
+    );
+    lastFlowRootHz = rootHz;
+    flowPhaseAccum +=
+      2 *
+        Math.PI *
+        rootHz *
+        dtSec *
+        (1 + 0.13 * smoothWaveField + 0.09 * smoothPlateRms) +
+      2 * Math.PI * lastMelodyHz * dtSec * 0.065;
+    if (flowPhaseAccum > 12_000) {
+      flowPhaseAccum -= Math.floor(flowPhaseAccum / (2 * Math.PI)) * 2 * Math.PI;
+    }
+
+    const centroidLean =
+      (smoothCentroidSemi - harmonyTriad.rootPc) * 2.8 + smoothWaveField * 1.8;
+
+    flowOsc0.frequency.setTargetAtTime(rootHz * 0.5, t, 0.55);
+    flowOsc1.frequency.setTargetAtTime(rootHz, t, 0.5);
+    flowOsc2.frequency.setTargetAtTime(rootHz * thirdMul, t, 0.48);
+    const plateDetune = smoothPlateMean * 4.2 + smoothPlateRms * 2.8;
+    flowOsc0.detune.setTargetAtTime(
+      drift0 + smoothMotion * 4 + plateDetune * 0.35 + centroidLean * 0.2,
+      t,
+      0.25,
+    );
+    flowOsc1.detune.setTargetAtTime(
+      drift1 - smoothBright * 3 + plateDetune * 0.55 + centroidLean * 0.25,
+      t,
+      0.25,
+    );
+    flowOsc2.detune.setTargetAtTime(
+      drift2 + smoothEnergy * 3.5 + plateDetune * 0.4 + centroidLean * 0.18,
+      t,
+      0.25,
+    );
+
+    const flowBed = (0.28 + 0.72 * presence) * 0.95;
+    const grayFlowBoost = hints.centerGraySalt ? 1.07 : 1;
+    /** Standing-wave nodal/antinodal breathing + stroke–plate overlap */
+    const plateGain = 1 + smoothPlateCov * 0.14 + smoothPlateRms * 0.11;
+    const platePhase = 1 + smoothPlateMean * 0.1;
+    const wMod = (0.86 + 0.22 * (0.5 + 0.5 * fCenter)) * platePhase;
+    const wMod2 = (0.9 + 0.18 * (0.5 + 0.5 * smoothWaveField)) * plateGain;
+    flowGain0.gain.setTargetAtTime(0.038 * flowBed * wMod, t, 0.18);
+    flowGain1.gain.setTargetAtTime(0.032 * flowBed * grayFlowBoost * wMod2, t, 0.18);
+    flowGain2.gain.setTargetAtTime(0.026 * flowBed * wMod * (0.97 + smoothPlateRms * 0.06), t, 0.18);
 
     const dTime =
       0.42 +
@@ -501,10 +670,38 @@ export function createAmbientSound(): {
       melodyAudible;
     melodyGain.gain.setTargetAtTime(Math.min(0.045, lead), t, 0.14);
 
-    /** Harmonic ripple: perfect fifth above lead, same delay bus — water-like shimmer */
+    /** Ripple: next chord tone above lead (consonant with current triad) */
     const ripLead = Math.min(0.045, lead);
-    melodyRippleOsc.frequency.setTargetAtTime(lastMelodyHz * 1.498307077, t, 0.22);
+    const ripSemi = rippleSemitonesToNextChordTone(lastMelodyPc, harmonyTriad);
+    melodyRippleOsc.frequency.setTargetAtTime(
+      lastMelodyHz * Math.pow(2, ripSemi / 12),
+      t,
+      0.22,
+    );
     melodyRippleGain.gain.setTargetAtTime(Math.min(0.014, ripLead * 0.34), t, 0.12);
+
+    if (melodyMode === "blend") {
+      const tops = topWeightedPitchClasses(weights, mask, 3, 0.052, scaleMode);
+      const oscs = [comboOsc0, comboOsc1, comboOsc2] as const;
+      const gains = [comboGain0, comboGain1, comboGain2] as const;
+      for (let i = 0; i < 3; i++) {
+        const o = oscs[i]!;
+        const gn = gains[i]!;
+        const ent = tops[i];
+        o.frequency.setTargetAtTime(
+          ent ? hzFromPitchClass(ent.pitchClass) : ROOT_HZ,
+          t,
+          0.35,
+        );
+        const wNorm = ent ? Math.min(1, ent.weight / 0.36) : 0;
+        const cg = Math.min(0.021, 0.011 * wNorm * (0.28 + 0.72 * presence));
+        gn.gain.setTargetAtTime(cg, t, 0.2);
+      }
+    } else {
+      comboGain0.gain.setTargetAtTime(0, t, 0.12);
+      comboGain1.gain.setTargetAtTime(0, t, 0.12);
+      comboGain2.gain.setTargetAtTime(0, t, 0.12);
+    }
 
     /** Underwater rolloff: no treble content */
     warmFilter.frequency.setTargetAtTime(
@@ -543,6 +740,12 @@ export function createAmbientSound(): {
     melodyDelayFb = null;
     melodyRippleOsc = null;
     melodyRippleGain = null;
+    comboOsc0 = null;
+    comboGain0 = null;
+    comboOsc1 = null;
+    comboGain1 = null;
+    comboOsc2 = null;
+    comboGain2 = null;
     fluidNoiseSrc = null;
     fluidLp = null;
     fluidGain = null;
@@ -562,7 +765,7 @@ export function createAmbientSound(): {
 
   function getDriveState(): AmbientDriveState | null {
     if (!enabled || !graphBuilt) return null;
-    const baseFlowHz = ROOT_HZ * Math.pow(2, smoothCentroidSemi / 12);
+    const baseFlowHz = lastFlowRootHz;
     const ripple = Math.min(
       1,
       smoothWaveVel * 0.36 +
