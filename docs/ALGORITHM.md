@@ -1,10 +1,10 @@
 # Silk stroke algorithm — mathematics and drawing details
 
-**Educational use only.** This write-up and the companion code exist **solely for learning**: the mathematics and rendering behavior behind generative “silk” strokes, and as a **pedagogical** reference for **coding agents** and students. It is **not** an official product, replacement, or endorsement of the original site. **Attribution, the original author, and licensing context** are in [README.md](README.md) (“Original Silk and attribution”).
+**Educational use only.** This write-up and the companion code exist **solely for learning**: the mathematics and rendering behavior behind generative “silk” strokes, and as a **pedagogical** reference for **coding agents** and students. It is **not** an official product, replacement, or endorsement of the original site. **Attribution, the original author, and licensing context** are in [README.md](../README.md) (“Original Silk and attribution”).
 
 ---
 
-This document describes the **generative stroke model** implemented in [`src/silk.ts`](src/silk.ts), **aligned with** the public [Silk / Weave Silk](http://weavesilk.com) experience (as implemented by **codeweive** — TypeScript + Vite). It is the reference for **why** the visuals look the way they do (filaments, glow, symmetry), not a walkthrough of the original minified bundle. **§4** documents the vendored **Perlin** script ([`public/vendor/noise.js`](public/vendor/noise.js)); **§5** onward covers the stroke integrator and drawing pipeline.
+This document describes the **generative stroke model** implemented in [`src/silk.ts`](../src/silk.ts), **aligned with** the public [Silk / Weave Silk](http://weavesilk.com) experience (as implemented by **codeweive** — TypeScript + Vite). It is the reference for **why** the visuals look the way they do (filaments, glow, symmetry), not a walkthrough of the original minified bundle. **§4** documents the vendored **Perlin** script ([`public/vendor/noise.js`](../public/vendor/noise.js)); **§5** onward covers the stroke integrator and drawing pipeline.
 
 ---
 
@@ -43,7 +43,7 @@ All physics runs in the **unscaled** symmetry plane; **drawInstruction** maps in
 
 ## 4. Vendored Perlin noise (`public/vendor/noise.js`)
 
-This file is the same **Processing-style** noise stack the live site loads as `js/noise.js`: it defines **`PerlinNoise`**, the global **`noise(x, y, z, octaves, fallout)`** used by [`src/silk.ts`](src/silk.ts), plus **`noiseDetail`** / **`noiseSeed`** and **`noiseProfile`** on `window`. Comments in the source point to Ken Perlin’s notes and classic Processing behavior.
+This file is the same **Processing-style** noise stack the live site loads as `js/noise.js`: it defines **`PerlinNoise`**, the global **`noise(x, y, z, octaves, fallout)`** used by [`src/silk.ts`](../src/silk.ts), plus **`noiseDetail`** / **`noiseSeed`** and **`noiseProfile`** on `window`. Comments in the source point to Ken Perlin’s notes and classic Processing behavior.
 
 ### 4.1 Pseudorandomness (`Marsaglia`)
 
@@ -74,7 +74,7 @@ The return value is a **weighted sum** of those terms; with large **`fallout`** 
 - **`noiseDetail(octaves, fallout?)`** stores defaults on **`noiseProfile`** for callers that read them (Silk does **not** use this path—it passes octaves/fallout into **`noise()`** directly each call).
 - **`noiseSeed(seed)`** assigns **`noiseProfile.seed`** and sets **`noiseProfile.generator = undef`** in the source; in practice the module also **pre-assigns** `generator = new PerlinNoise(0)`, so **re-seeding** only takes effect if client code reconstructs the generator. This port does not call **`noiseSeed`** from `silk.ts`.
 
-### 4.6 How [`src/silk.ts`](src/silk.ts) uses it
+### 4.6 How [`src/silk.ts`](../src/silk.ts) uses it
 
 Silk samples **3D** noise at scaled position plus time (see §5.4), then maps the scalar to an **angle** for acceleration. For that pipeline, only the **shape** of \(N = \texttt{noise}(\ldots)\) matters (smooth, multi-frequency); the exact **Marsaglia** seed affects **reproducibility** between full page loads, not the character of the motion.
 
@@ -285,13 +285,13 @@ Default hex colors are both `#276f9b` until the UI changes them.
 
 ## 11. Sparks (overlay)
 
-On **non-mirror** “original” instructions only, every **10th** `frameTime`, with probability over the curve, a random vertex may spawn a **spark**: small filled circle on a separate canvas, `lighter` blend, drifting with random velocity, fading alpha. Color is `d3.rgb(strokeStyle).brighter(2)` (see [`src/sparks.ts`](src/sparks.ts)).
+On **non-mirror** “original” instructions only, every **10th** `frameTime`, with probability over the curve, a random vertex may spawn a **spark**: small filled circle on a separate canvas, `lighter` blend, drifting with random velocity, fading alpha. Color is `d3.rgb(strokeStyle).brighter(2)` (see [`src/sparks.ts`](../src/sparks.ts)).
 
 ---
 
 ## 12. Canvas implementation details
 
-- **Clearing / erasing:** Any full-canvas fill or `clearRect` used to **reset** pixels must temporarily set `globalCompositeOperation` to **`source-over"`** and `globalAlpha` to **1**. Under **`lighter`**, filling black does **not** remove existing light pixels (additive with zero does not subtract). See [`src/canvas-util.ts`](src/canvas-util.ts).
+- **Clearing / erasing:** Any full-canvas fill or `clearRect` used to **reset** pixels must temporarily set `globalCompositeOperation` to **`source-over"`** and `globalAlpha` to **1**. Under **`lighter`**, filling black does **not** remove existing light pixels (additive with zero does not subtract). See [`src/canvas-util.ts`](../src/canvas-util.ts).
 - **HiDPI:** Backing store may be `width_css × devicePixelRatio`; the 2D context is scaled so **logical** drawing coordinates match CSS pixels. Symmetry center and pointer mapping must stay in that same logical space.
 
 ---
@@ -316,9 +316,9 @@ On **non-mirror** “original” instructions only, every **10th** `frameTime`, 
 
 ## 14. Further reading in this repo
 
-- [`public/vendor/noise.js`](public/vendor/noise.js) — Perlin implementation (see **§4**).
-- [`plan/SITE-BREAKDOWN.md`](plan/SITE-BREAKDOWN.md) — how the live site bundles scripts and classes.
+- [`public/vendor/noise.js`](../public/vendor/noise.js) — Perlin implementation (see **§4**).
+- [`SITE-BREAKDOWN.md`](SITE-BREAKDOWN.md) — how the live site bundles scripts and classes.
 - [`PERFORMANCE.md`](PERFORMANCE.md) — complexity, canvas cost, and practical limits.
-- [`src/silk.ts`](src/silk.ts) — authoritative implementation for this port.
+- [`src/silk.ts`](../src/silk.ts) — authoritative implementation for this port.
 
-For attribution and disclaimers, see [README.md](README.md) (“Original Silk and attribution”).
+For attribution and disclaimers, see [README.md](../README.md) (“Original Silk and attribution”).

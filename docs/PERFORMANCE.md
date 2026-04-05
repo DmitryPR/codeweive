@@ -1,8 +1,8 @@
 # Performance and limitations
 
-**Educational context.** This file describes **scalability and practical limits** of the local port ([`src/silk.ts`](src/silk.ts), [`src/app.ts`](src/app.ts)) so learners and agents know where the design trades fidelity for simplicity. It is not a formal benchmark report.
+**Educational context.** This file describes **scalability and practical limits** of the local port ([`src/silk.ts`](../src/silk.ts), [`src/app.ts`](../src/app.ts)) so learners and agents know where the design trades fidelity for simplicity. It is not a formal benchmark report.
 
-For the mathematical model, see [ALGORITHM.md](ALGORITHM.md). For the live site’s architecture, see [plan/SITE-BREAKDOWN.md](plan/SITE-BREAKDOWN.md).
+For the mathematical model, see [ALGORITHM.md](ALGORITHM.md). For the live site’s architecture, see [SITE-BREAKDOWN.md](SITE-BREAKDOWN.md).
 
 ---
 

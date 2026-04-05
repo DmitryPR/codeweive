@@ -18,7 +18,7 @@ The original **Silk** experience is served at **[http://weavesilk.com](http://we
 
 ## Goal
 
-- Document how the public app achieves mirrored curves, blending, spiral behavior, and real-time drawing (see [plan/SITE-BREAKDOWN.md](plan/SITE-BREAKDOWN.md) and [ALGORITHM.md](ALGORITHM.md)).
+- Document how the public app achieves mirrored curves, blending, spiral behavior, and real-time drawing (see [docs/SITE-BREAKDOWN.md](docs/SITE-BREAKDOWN.md) and [docs/ALGORITHM.md](docs/ALGORITHM.md)).
 - Reproduce the core visual behavior in a clean, documented stack: **TypeScript** + **canvas** (see [`src/silk.ts`](src/silk.ts), [`src/app.ts`](src/app.ts)).
 
 ## Constraints (working)
@@ -39,4 +39,6 @@ Then open the URL shown in the terminal (port **5174**). The canvas uses the sam
 npm run build   # output in dist/
 ```
 
-See [plan/SITE-BREAKDOWN.md](plan/SITE-BREAKDOWN.md) for site stack notes and visual QA checklist, [ALGORITHM.md](ALGORITHM.md) for the mathematical model, and [PERFORMANCE.md](PERFORMANCE.md) for scalability limits and cost drivers.
+Deployment (including **GitHub Pages**): [docs/DEPLOY.md](docs/DEPLOY.md).
+
+See [docs/SITE-BREAKDOWN.md](docs/SITE-BREAKDOWN.md) for site stack notes and visual QA checklist, [docs/ALGORITHM.md](docs/ALGORITHM.md) for the mathematical model, and [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for scalability limits and cost drivers.
