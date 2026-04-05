@@ -9,7 +9,9 @@ import { Sparks } from "./sparks";
 import {
   PERSIST_KEY,
   drawDataUrlToSilkCtx,
+  canvasToDataUrl,
   imageDataToPngUrl,
+  imageDataToPngUrlAsync,
   parsePersisted,
   pngUrlsToImageDataStack,
   type PersistV1,
@@ -198,7 +200,6 @@ export function mount(root: HTMLElement): () => void {
 
     readHudIntoSettings();
     const undoSlice = undoStack.slice(-MAX_UNDO_PERSIST);
-    const undoPngs = undoSlice.map((snap) => imageDataToPngUrl(snap));
 
     const bubblePlaced = colorBubble.classList.contains("color-bubble--placed");
     const leftParsed = parseFloat(colorBubble.style.left);
@@ -206,11 +207,22 @@ export function mount(root: HTMLElement): () => void {
 
     let silkPng: string;
     try {
-      silkPng = silkCanvas.toDataURL("image/png");
+      silkPng = await canvasToDataUrl(silkCanvas, "image/png");
     } catch {
       return;
     }
     if (!silkPng) return;
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    const undoPngs: string[] = [];
+    for (const snap of undoSlice) {
+      try {
+        undoPngs.push(await imageDataToPngUrlAsync(snap));
+      } catch {
+        undoPngs.push(imageDataToPngUrl(snap));
+      }
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
 
     const payload: PersistV1 = {
       v: 1,
@@ -259,7 +271,7 @@ export function mount(root: HTMLElement): () => void {
     try {
       let jpg: string;
       try {
-        jpg = silkCanvas.toDataURL("image/jpeg", 0.85);
+        jpg = await canvasToDataUrl(silkCanvas, "image/jpeg", 0.85);
       } catch {
         return;
       }

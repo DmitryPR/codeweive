@@ -46,6 +46,51 @@ export function imageDataToPngUrl(data: ImageData): string {
   return c.toDataURL("image/png");
 }
 
+/**
+ * `toDataURL` blocks until the full base64 string is built. This path uses
+ * `toBlob` (callback is asynchronous) + `FileReader`, so the stack can unwind
+ * and the browser can paint / process input between steps.
+ */
+export function canvasToDataUrl(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality?: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("canvas.toBlob returned null"));
+          return;
+        }
+        const fr = new FileReader();
+        fr.onloadend = () => {
+          const s = fr.result;
+          if (typeof s !== "string") {
+            reject(new Error("FileReader.readAsDataURL: unexpected result"));
+            return;
+          }
+          resolve(s);
+        };
+        fr.onerror = () => reject(fr.error ?? new Error("FileReader error"));
+        fr.readAsDataURL(blob);
+      },
+      type,
+      quality,
+    );
+  });
+}
+
+export async function imageDataToPngUrlAsync(data: ImageData): Promise<string> {
+  const c = document.createElement("canvas");
+  c.width = data.width;
+  c.height = data.height;
+  const ctx = c.getContext("2d");
+  if (!ctx) return "";
+  ctx.putImageData(data, 0, 0);
+  return canvasToDataUrl(c, "image/png");
+}
+
 export function parsePersisted(raw: string): PersistV1 | null {
   try {
     const o = JSON.parse(raw) as PersistV1;
