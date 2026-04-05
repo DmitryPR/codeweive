@@ -6,6 +6,14 @@ import { CanvasUtil } from "./canvas-util";
 import { SILK_COLOR_PRESETS } from "./silk-colors";
 import { Silk, type ScaleInfo, type SilkStatePartial } from "./silk";
 import { Sparks } from "./sparks";
+import {
+  PERSIST_KEY,
+  drawDataUrlToSilkCtx,
+  imageDataToPngUrl,
+  parsePersisted,
+  pngUrlsToImageDataStack,
+  type PersistV1,
+} from "./persist-silk";
 
 const AUTO_DRAW_PRESETS = ["lissajous", "orbit", "drift", "pulse"] as const;
 type AutoDrawPreset = (typeof AUTO_DRAW_PRESETS)[number];
@@ -156,10 +164,210 @@ export function mount(root: HTMLElement): () => void {
   const hudPanel = root.querySelector<HTMLElement>("#hud")!;
   const hudMenuToggle = root.querySelector<HTMLButtonElement>("#hud-menu-toggle")!;
 
+  const PERSIST_DEBOUNCE_MS = 800;
+  const MAX_UNDO_PERSIST = 6;
+  let persistSuspended = false;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function schedulePersist(): void {
+    if (persistSuspended) return;
+    if (persistTimer != null) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      void flushPersist();
+    }, PERSIST_DEBOUNCE_MS);
+  }
+
+  async function flushPersistImmediate(): Promise<void> {
+    if (persistSuspended) return;
+    if (persistTimer != null) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    await flushPersist();
+  }
+
+  function onPageHidePersist(): void {
+    void flushPersistImmediate();
+  }
+
+  async function flushPersist(): Promise<void> {
+    if (persistSuspended) return;
+    const cw = silkCanvas.width;
+    const ch = silkCanvas.height;
+    if (cw === 0 || ch === 0) return;
+
+    readHudIntoSettings();
+    const undoSlice = undoStack.slice(-MAX_UNDO_PERSIST);
+    const undoPngs = undoSlice.map((snap) => imageDataToPngUrl(snap));
+
+    const bubblePlaced = colorBubble.classList.contains("color-bubble--placed");
+    const leftParsed = parseFloat(colorBubble.style.left);
+    const topParsed = parseFloat(colorBubble.style.top);
+
+    let silkPng: string;
+    try {
+      silkPng = silkCanvas.toDataURL("image/png");
+    } catch {
+      return;
+    }
+    if (!silkPng) return;
+
+    const payload: PersistV1 = {
+      v: 1,
+      hud: {
+        mirror: mirrorEl.checked,
+        rotations: Math.max(
+          1,
+          Math.min(12, Math.floor(Number(rotationsEl.value) || 1)),
+        ),
+        spiral: spiralEl.checked,
+        heartbeat: heartbeatEl.checked,
+        ambientSound: ambientSoundEl.checked,
+        autoDraw: autoDrawEl.checked,
+        autoDrawPreset: autoDrawPresetEl.value,
+        saveResolution: saveResolutionEl.value,
+        hudMenuOpen: !hudPanel.classList.contains("hud-panel--collapsed"),
+      },
+      bubble: {
+        placed: bubblePlaced,
+        left:
+          bubblePlaced && !Number.isNaN(leftParsed) ? leftParsed : undefined,
+        top: bubblePlaced && !Number.isNaN(topParsed) ? topParsed : undefined,
+        panelOpen: !colorPanel.hidden,
+      },
+      colors: {
+        base: silkSettings.color ?? defaultPalette.base,
+        accent: silkSettings.highlightColor ?? defaultPalette.accent,
+      },
+      cw,
+      ch,
+      silkPng,
+      undoPngs,
+    };
+
+    const trySave = (p: PersistV1): boolean => {
+      try {
+        localStorage.setItem(PERSIST_KEY, JSON.stringify(p));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (trySave(payload)) return;
+    if (trySave({ ...payload, undoPngs: [] })) return;
+    try {
+      let jpg: string;
+      try {
+        jpg = silkCanvas.toDataURL("image/jpeg", 0.85);
+      } catch {
+        return;
+      }
+      localStorage.setItem(
+        PERSIST_KEY,
+        JSON.stringify({ ...payload, undoPngs: [], silkPng: jpg }),
+      );
+    } catch {
+      /* quota or private mode */
+    }
+  }
+
+  async function restoreSilkSession(): Promise<void> {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (!raw) return;
+    const data = parsePersisted(raw);
+    if (!data) return;
+
+    persistSuspended = true;
+    try {
+      mirrorEl.checked = data.hud.mirror;
+      const rot = Math.max(
+        1,
+        Math.min(12, Math.floor(Number(data.hud.rotations) || 1)),
+      );
+      rotationsEl.value = String(rot);
+      rotationsEl.setAttribute("aria-valuenow", String(rot));
+      rotationsValueEl.textContent = String(rot);
+      spiralEl.checked = data.hud.spiral;
+      heartbeatEl.checked = data.hud.heartbeat;
+      ambientSoundEl.checked = data.hud.ambientSound;
+      autoDrawEl.checked = data.hud.autoDraw;
+      const ap = data.hud.autoDrawPreset;
+      autoDrawPresetEl.value = AUTO_DRAW_PRESETS.includes(ap as AutoDrawPreset)
+        ? ap
+        : "lissajous";
+      const sr = data.hud.saveResolution;
+      if ([...saveResolutionEl.options].some((o) => o.value === sr)) {
+        saveResolutionEl.value = sr;
+      }
+      readHudIntoSettings();
+      updateAutoDrawPresetDisabled();
+
+      applySilkColors(data.colors.base, data.colors.accent);
+
+      if (
+        data.bubble.placed &&
+        data.bubble.left != null &&
+        data.bubble.top != null
+      ) {
+        applyBubblePosition(data.bubble.left, data.bubble.top);
+      } else {
+        colorBubble.classList.remove("color-bubble--placed");
+        colorBubble.style.left = "";
+        colorBubble.style.top = "";
+        colorBubble.style.bottom = "";
+        colorBubble.style.transform = "";
+      }
+
+      setColorPanelOpen(data.bubble.panelOpen);
+      updateBubblePanelPlacement();
+
+      setHudPanelOpen(data.hud.hudMenuOpen);
+
+      await ambient.setEnabled(data.hud.ambientSound);
+
+      const cw = silkCanvas.width;
+      const ch = silkCanvas.height;
+      const drew = await drawDataUrlToSilkCtx(data.silkPng, silkCtx, cw, ch);
+      if (!drew) return;
+
+      undoStack.length = 0;
+      if (data.cw === cw && data.ch === ch && data.undoPngs.length > 0) {
+        const stack = await pngUrlsToImageDataStack(data.undoPngs, cw, ch);
+        for (const id of stack) undoStack.push(id);
+      }
+      strokes.length = 0;
+      currentStroke = null;
+      inputIsActive = false;
+      pinputX = null;
+      pinputY = null;
+      sparks.points.length = 0;
+      const sctx = sparksCanvas.getContext("2d");
+      if (sctx) {
+        sctx.save();
+        sctx.globalCompositeOperation = "source-over";
+        sctx.globalAlpha = 1;
+        sctx.clearRect(0, 0, sparksCanvas.width, sparksCanvas.height);
+        sctx.restore();
+      }
+      lastSilkLuma = 0.02;
+      lastPlateMeanF = 0;
+      lastPlateRms = 0;
+      lastPlateCoverage = 0;
+      soundDitherX = 0;
+      soundDitherY = 0;
+      updateUndoButton();
+    } finally {
+      persistSuspended = false;
+    }
+  }
+
   function setHudPanelOpen(open: boolean): void {
     hudPanel.classList.toggle("hud-panel--collapsed", !open);
     hudMenuToggle.setAttribute("aria-expanded", String(open));
     hudMenuToggle.title = open ? "Hide controls" : "Show controls";
+    schedulePersist();
   }
 
   function onHudMenuToggleClick(): void {
@@ -185,6 +393,11 @@ export function mount(root: HTMLElement): () => void {
   rotationsEl.addEventListener("input", readHudIntoSettings);
   rotationsEl.addEventListener("change", readHudIntoSettings);
   spiralEl.addEventListener("change", readHudIntoSettings);
+  mirrorEl.addEventListener("change", schedulePersist);
+  rotationsEl.addEventListener("input", schedulePersist);
+  rotationsEl.addEventListener("change", schedulePersist);
+  spiralEl.addEventListener("change", schedulePersist);
+  heartbeatEl.addEventListener("change", schedulePersist);
 
   function scaleInfo(): ScaleInfo {
     return {
@@ -266,6 +479,7 @@ export function mount(root: HTMLElement): () => void {
       currentStroke.complete();
     }
     inputIsActive = false;
+    schedulePersist();
   }
 
   function onPointerDown(e: PointerEvent): void {
@@ -324,6 +538,7 @@ export function mount(root: HTMLElement): () => void {
     lastPlateCoverage = 0;
     soundDitherX = 0;
     soundDitherY = 0;
+    schedulePersist();
   }
 
   clearEl.addEventListener("click", onClearClick);
@@ -342,12 +557,18 @@ export function mount(root: HTMLElement): () => void {
     if (!autoDrawEl.checked) {
       endStroke();
     }
+    schedulePersist();
   }
   autoDrawEl.addEventListener("change", onAutoDrawChange);
-  autoDrawPresetEl.addEventListener("change", onAutoDrawPresetChange);
+  autoDrawPresetEl.addEventListener("change", () => {
+    onAutoDrawPresetChange();
+    schedulePersist();
+  });
   updateAutoDrawPresetDisabled();
+  saveResolutionEl.addEventListener("change", schedulePersist);
 
   async function onAmbientSoundChange(): Promise<void> {
+    schedulePersist();
     await ambient.setEnabled(ambientSoundEl.checked);
   }
   ambientSoundEl.addEventListener("change", onAmbientSoundChange);
@@ -355,9 +576,12 @@ export function mount(root: HTMLElement): () => void {
   function onAmbientVisibility(): void {
     if (document.visibilityState === "visible") {
       ambient.resumeIfNeeded();
+    } else {
+      void flushPersistImmediate();
     }
   }
   document.addEventListener("visibilitychange", onAmbientVisibility);
+  window.addEventListener("pagehide", onPageHidePersist);
 
   /** Lub–dub style envelope in [0, 1] for a ~1 rad step (tuned in applyHeartbeatVisual). */
   function heartbeatStrength(t: number): number {
@@ -517,6 +741,7 @@ export function mount(root: HTMLElement): () => void {
     const tag =
       mode === "hd" ? "hd1080" : mode === "4k" ? "4k2160" : "native";
     downloadCanvasPng(out, `silk-port-${tag}-${Date.now()}.png`);
+    schedulePersist();
   }
 
   savePngEl.addEventListener("click", savePng);
@@ -535,6 +760,7 @@ export function mount(root: HTMLElement): () => void {
     silkSettings.color = base;
     silkSettings.highlightColor = accent;
     updateColorFab();
+    schedulePersist();
   }
 
   /** ~natural height of open palette + gap (swatch ring + padding + hint + grip) */
@@ -631,6 +857,7 @@ export function mount(root: HTMLElement): () => void {
         ensureBubbleInViewport();
       });
     }
+    schedulePersist();
   }
 
   type BubbleDragOrigin = "toggle" | "grab";
@@ -669,6 +896,7 @@ export function mount(root: HTMLElement): () => void {
         ensureBubbleInViewport();
       });
     }
+    schedulePersist();
   }
 
   function clampBubbleOnResize(): void {
@@ -848,6 +1076,7 @@ export function mount(root: HTMLElement): () => void {
     soundDitherX = 0;
     soundDitherY = 0;
     updateUndoButton();
+    schedulePersist();
   }
 
   function tick(): void {
@@ -980,7 +1209,10 @@ export function mount(root: HTMLElement): () => void {
     timer = setTimeout(tick, delay);
   }
 
-  tick();
+  void (async () => {
+    await restoreSilkSession();
+    tick();
+  })();
 
   sparksCanvas.style.position = "absolute";
   sparksCanvas.style.inset = "0";
@@ -991,9 +1223,12 @@ export function mount(root: HTMLElement): () => void {
 
   return () => {
     if (timer != null) clearTimeout(timer);
+    if (persistTimer != null) clearTimeout(persistTimer);
+    void flushPersistImmediate();
     cancelBubbleDrag();
     window.removeEventListener("resize", resize);
     window.removeEventListener("resize", clampBubbleOnResize);
+    window.removeEventListener("pagehide", onPageHidePersist);
     window.removeEventListener("pointerup", onColorGlobalPointerUp);
     window.removeEventListener("pointercancel", onColorGlobalPointerUp);
     document.removeEventListener("pointerdown", onDocPointerDownClose);
