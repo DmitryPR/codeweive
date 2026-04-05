@@ -153,6 +153,20 @@ export function mount(root: HTMLElement): () => void {
   const colorPanel = root.querySelector<HTMLElement>("#color-bubble-panel")!;
   const colorGrab = colorPanel.querySelector<HTMLElement>(".color-bubble-grab")!;
   const colorRing = root.querySelector<HTMLElement>("#color-swatch-ring")!;
+  const hudPanel = root.querySelector<HTMLElement>("#hud")!;
+  const hudMenuToggle = root.querySelector<HTMLButtonElement>("#hud-menu-toggle")!;
+
+  function setHudPanelOpen(open: boolean): void {
+    hudPanel.classList.toggle("hud-panel--collapsed", !open);
+    hudMenuToggle.setAttribute("aria-expanded", String(open));
+    hudMenuToggle.title = open ? "Hide controls" : "Show controls";
+  }
+
+  function onHudMenuToggleClick(): void {
+    setHudPanelOpen(hudPanel.classList.contains("hud-panel--collapsed"));
+  }
+
+  hudMenuToggle.addEventListener("click", onHudMenuToggleClick);
 
   function readHudIntoSettings(): void {
     silkSettings.symMirror = mirrorEl.checked;
@@ -643,6 +657,7 @@ export function mount(root: HTMLElement): () => void {
     const t = Math.round(Math.min(maxT, Math.max(pad, top)));
     colorBubble.style.left = `${l}px`;
     colorBubble.style.top = `${t}px`;
+    colorBubble.style.bottom = "auto";
     colorBubble.style.transform = "none";
     colorBubble.classList.add("color-bubble--placed");
     updateBubblePanelPlacement();
@@ -992,6 +1007,7 @@ export function mount(root: HTMLElement): () => void {
     silkCanvas.removeEventListener("lostpointercapture", onLostPointerCapture);
     clearEl.removeEventListener("click", onClearClick);
     undoEl.removeEventListener("click", performUndo);
+    hudMenuToggle.removeEventListener("click", onHudMenuToggleClick);
     autoDrawEl.removeEventListener("change", onAutoDrawChange);
     autoDrawPresetEl.removeEventListener("change", onAutoDrawPresetChange);
     ambientSoundEl.removeEventListener("change", onAmbientSoundChange);

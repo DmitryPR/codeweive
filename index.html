@@ -32,7 +32,26 @@
           <div id="color-swatch-ring" class="color-swatch-ring"></div>
         </div>
       </aside>
-      <div id="hud">
+      <div id="hud-dock" class="hud-dock">
+        <button
+          type="button"
+          id="hud-menu-toggle"
+          class="hud-menu-toggle"
+          aria-expanded="true"
+          aria-controls="hud"
+          title="Hide controls"
+        >
+          <span class="hud-menu-toggle-bars" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        </button>
+        <div
+          id="hud"
+          class="hud-panel"
+          title="Drag the bottom-right corner to resize"
+        >
         <label><input id="mirror" type="checkbox" checked /> Mirror</label>
         <label class="hud-rotations">
           <span class="hud-rotations-label">Rotations</span>
@@ -51,12 +70,6 @@
           <span class="hud-rotations-value" id="rotations-value" aria-hidden="true">1</span>
         </label>
         <label><input id="spiral" type="checkbox" /> Spiral copies</label>
-        <label class="hud-heartbeat"
-          ><input id="heartbeat" type="checkbox" /> Heartbeat</label
-        >
-        <label class="hud-ambient-sound"
-          ><input id="ambient-sound" type="checkbox" /> Ambient sound</label
-        >
         <label class="hud-auto-draw"
           ><input id="auto-draw" type="checkbox" /> Auto-draw</label
         >
@@ -73,17 +86,100 @@
             <option value="pulse">Pulse</option>
           </select>
         </label>
-        <button id="undo" type="button" disabled aria-label="Undo last stroke or clear">Undo</button>
-        <button id="clear" type="button">Clear</button>
-        <label class="hud-save-resolution">
-          <span class="hud-save-resolution-label">Save as</span>
-          <select id="save-resolution" aria-label="PNG export resolution">
-            <option value="native">Native</option>
-            <option value="hd">HD 1920×1080</option>
-            <option value="4k">4K 3840×2160</option>
-          </select>
-        </label>
-        <button id="save-png" type="button">Save PNG</button>
+        <section class="hud-ambient" aria-labelledby="hud-ambient-heading">
+          <h2 class="hud-section-title" id="hud-ambient-heading">Ambient</h2>
+          <label class="hud-heartbeat"
+            ><input id="heartbeat" type="checkbox" /> Heartbeat</label
+          >
+          <label class="hud-ambient-sound"
+            ><input id="ambient-sound" type="checkbox" /> Sound</label
+          >
+        </section>
+        <section class="hud-export" aria-label="PNG export and canvas actions">
+          <label class="hud-save-resolution">
+            <span class="hud-save-resolution-label">PNG size</span>
+            <select id="save-resolution" aria-label="PNG export resolution">
+              <option value="native">Default</option>
+              <option value="hd">HD 1920×1080</option>
+              <option value="4k">4K 3840×2160</option>
+            </select>
+          </label>
+          <div class="hud-icon-bar" role="toolbar" aria-label="Canvas actions">
+            <button
+              id="undo"
+              type="button"
+              class="hud-icon-btn"
+              disabled
+              title="Undo last stroke or clear"
+              aria-label="Undo last stroke or clear"
+            >
+              <svg
+                class="hud-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M3 7v6h6" />
+                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+              </svg>
+            </button>
+            <button
+              id="clear"
+              type="button"
+              class="hud-icon-btn"
+              title="Clear canvas"
+              aria-label="Clear canvas"
+            >
+              <svg
+                class="hud-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path
+                  d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </button>
+            <button
+              id="save-png"
+              type="button"
+              class="hud-icon-btn"
+              title="Save PNG"
+              aria-label="Save PNG"
+            >
+              <svg
+                class="hud-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
+          </div>
+        </section>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
