@@ -27,7 +27,7 @@ A **broken** (branch-root) deploy shows `/src/main.ts` and/or a broken noise URL
 ### Setup
 
 1. **Settings → Pages → Build and deployment → Source:** choose **GitHub Actions** (not “Deploy from a branch”).
-2. Push to **`main`** (or run the workflow manually). The workflow [`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml) runs `npm ci`, `npm run build`, and uploads **`dist/`**.
+2. Push to **`main`** (or run the workflow manually). The workflow [`.github/workflows/main.yml`](../.github/workflows/main.yml) runs `npm ci`, `npm run build`, and uploads **`dist/`**.
 
 After the first successful run, the URL appears under **Settings → Pages** and in the workflow summary (typically `https://dmitrypr.github.io/codeweive/`). If GitHub asks to **approve** the `github-pages` environment for Actions, approve it once.
 
