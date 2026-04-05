@@ -3,16 +3,77 @@ import { SILK_COLOR_PRESETS } from "./silk-colors";
 import { Silk, type ScaleInfo, type SilkStatePartial } from "./silk";
 import { Sparks } from "./sparks";
 
+const AUTO_DRAW_PRESETS = ["lissajous", "orbit", "drift", "pulse"] as const;
+type AutoDrawPreset = (typeof AUTO_DRAW_PRESETS)[number];
+
+function parseAutoDrawPreset(v: string): AutoDrawPreset {
+  for (const p of AUTO_DRAW_PRESETS) {
+    if (p === v) return p;
+  }
+  return "lissajous";
+}
+
+function clampDrawXY(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  pad: number,
+): { x: number; y: number } {
+  return {
+    x: Math.min(w - pad, Math.max(pad, x)),
+    y: Math.min(h - pad, Math.max(pad, y)),
+  };
+}
+
+/** Parametric paths for Auto-draw (`docs/FEATURE.md`). */
+function autoDrawPosition(
+  preset: AutoDrawPreset,
+  t: number,
+  w: number,
+  h: number,
+  pad: number,
+): { x: number; y: number } {
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+  const r = Math.min(w, h) * 0.19;
+  let x: number;
+  let y: number;
+  switch (preset) {
+    case "lissajous":
+      x = cx + r * (Math.sin(t) + 0.32 * Math.sin(t * 2.17));
+      y = cy + r * (Math.cos(t * 0.83) + 0.28 * Math.sin(t * 1.91));
+      break;
+    case "orbit":
+      x = cx + r * Math.cos(t * 0.95);
+      y = cy + r * Math.sin(t * 0.95);
+      break;
+    case "drift":
+      x = cx + r * 0.85 * Math.sin(t * 0.31) + r * 0.35 * Math.sin(t * 0.73 + 1.2);
+      y = cy + r * 0.85 * Math.cos(t * 0.27) + r * 0.32 * Math.cos(t * 0.91 + 0.4);
+      break;
+    case "pulse": {
+      const breathe = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 0.55));
+      const rr = r * breathe;
+      x = cx + rr * Math.cos(t * 1.1) * (0.85 + 0.15 * Math.sin(t * 3));
+      y = cy + rr * Math.sin(t * 1.1) * (0.85 + 0.15 * Math.cos(t * 2.7));
+      break;
+    }
+  }
+  return clampDrawXY(x, y, w, h, pad);
+}
+
 function deepSilkSettings(base: SilkStatePartial): SilkStatePartial {
   return structuredClone(base) as SilkStatePartial;
 }
 
 export function mount(root: HTMLElement): () => void {
+  const silkStage = root.querySelector<HTMLElement>("#silk-stage")!;
   const silkCanvas = root.querySelector<HTMLCanvasElement>("#silk")!;
   const sparksCanvas = document.createElement("canvas");
   sparksCanvas.id = "sparks";
   sparksCanvas.setAttribute("aria-hidden", "true");
-  root.appendChild(sparksCanvas);
+  silkStage.appendChild(sparksCanvas);
 
   const silkUtil = new CanvasUtil(silkCanvas);
   const sparksUtil = new CanvasUtil(sparksCanvas);
@@ -51,6 +112,9 @@ export function mount(root: HTMLElement): () => void {
   const rotationsEl = root.querySelector<HTMLInputElement>("#rotations")!;
   const rotationsValueEl = root.querySelector<HTMLElement>("#rotations-value")!;
   const spiralEl = root.querySelector<HTMLInputElement>("#spiral")!;
+  const heartbeatEl = root.querySelector<HTMLInputElement>("#heartbeat")!;
+  const autoDrawEl = root.querySelector<HTMLInputElement>("#auto-draw")!;
+  const autoDrawPresetEl = root.querySelector<HTMLSelectElement>("#auto-draw-preset")!;
   const clearEl = root.querySelector<HTMLButtonElement>("#clear")!;
   const savePngEl = root.querySelector<HTMLButtonElement>("#save-png")!;
   const colorBubble = root.querySelector<HTMLElement>("#color-bubble")!;
@@ -98,11 +162,17 @@ export function mount(root: HTMLElement): () => void {
   let pinputX: number | null = null;
   let pinputY: number | null = null;
   let inputIsActive = false;
+  /** True while the user holds the pointer on the canvas (Auto-draw yields). */
+  let userPointerHeld = false;
+  let heartbeatPhase = 0;
+  let autoDrawPhase = 0;
 
   function logicalFromEvent(clientX: number, clientY: number): { x: number; y: number } {
     const r = silkCanvas.getBoundingClientRect();
-    const x = clientX - r.left;
-    const y = clientY - r.top;
+    const rw = r.width || 1;
+    const rh = r.height || 1;
+    const x = ((clientX - r.left) / rw) * silkUtil.widthOnScreen;
+    const y = ((clientY - r.top) / rh) * silkUtil.heightOnScreen;
     return { x, y };
   }
 
@@ -142,6 +212,7 @@ export function mount(root: HTMLElement): () => void {
 
   function onPointerDown(e: PointerEvent): void {
     if (e.button === 2) return;
+    userPointerHeld = true;
     silkCanvas.setPointerCapture(e.pointerId);
     const { x, y } = logicalFromEvent(e.clientX, e.clientY);
     inputX = x;
@@ -161,9 +232,16 @@ export function mount(root: HTMLElement): () => void {
     } catch {
       /* ignore */
     }
+    userPointerHeld = false;
     const { x, y } = logicalFromEvent(e.clientX, e.clientY);
     inputX = x;
     inputY = y;
+    endStroke();
+  }
+
+  function onLostPointerCapture(): void {
+    if (!userPointerHeld) return;
+    userPointerHeld = false;
     endStroke();
   }
 
@@ -171,6 +249,7 @@ export function mount(root: HTMLElement): () => void {
   silkCanvas.addEventListener("pointermove", onPointerMove);
   silkCanvas.addEventListener("pointerup", onPointerUp);
   silkCanvas.addEventListener("pointercancel", onPointerUp);
+  silkCanvas.addEventListener("lostpointercapture", onLostPointerCapture);
 
   clearEl.addEventListener("click", () => {
     silkUtil.fillSolid("#000");
@@ -181,6 +260,91 @@ export function mount(root: HTMLElement): () => void {
     pinputX = null;
     pinputY = null;
   });
+
+  function updateAutoDrawPresetDisabled(): void {
+    autoDrawPresetEl.disabled = !autoDrawEl.checked;
+  }
+
+  function onAutoDrawPresetChange(): void {
+    autoDrawPhase = 0;
+  }
+
+  function onAutoDrawChange(): void {
+    updateAutoDrawPresetDisabled();
+    if (!autoDrawEl.checked) {
+      endStroke();
+    }
+  }
+  autoDrawEl.addEventListener("change", onAutoDrawChange);
+  autoDrawPresetEl.addEventListener("change", onAutoDrawPresetChange);
+  updateAutoDrawPresetDisabled();
+
+  /** Lub–dub style envelope in [0, 1] for a ~1 rad step (tuned in applyHeartbeatVisual). */
+  function heartbeatStrength(t: number): number {
+    const lub = Math.max(0, Math.sin(t)) ** 2.15;
+    const dub = Math.max(0, Math.sin(2 * t + 1.05)) ** 3.1 * 0.52;
+    return Math.min(1, lub + dub);
+  }
+
+  function applyHeartbeatVisual(): void {
+    if (!heartbeatEl.checked) {
+      silkStage.style.transform = "";
+      silkCanvas.style.filter = "";
+      sparksCanvas.style.filter = "";
+      return;
+    }
+    heartbeatPhase += 0.11;
+    const n = heartbeatStrength(heartbeatPhase);
+    const scale = 1 + 0.015 * n;
+    const brightness = 1 + 0.065 * n;
+    const contrast = 1 + 0.048 * n;
+    silkStage.style.transform = `scale(${scale})`;
+    const f = `brightness(${brightness}) contrast(${contrast})`;
+    silkCanvas.style.filter = f;
+    sparksCanvas.style.filter = f;
+  }
+
+  /** Keep the in-progress auto-draw stroke aligned with HUD + palette (slider, toggles, colors). */
+  function syncAutoDrawStrokeWithHud(): void {
+    if (!autoDrawEl.checked || userPointerHeld || !currentStroke || !inputIsActive) {
+      return;
+    }
+    readHudIntoSettings();
+    const s = currentStroke;
+    s.symMirror = Boolean(silkSettings.symMirror);
+    s.symNumRotations = silkSettings.symNumRotations ?? 1;
+    s.spiralCopies = silkSettings.spiralCopies ?? 1;
+    s.color = silkSettings.color ?? defaultPalette.base;
+    s.highlightColor = silkSettings.highlightColor ?? defaultPalette.accent;
+    s.symCenterX = silkUtil.halfWidthOnScreen;
+    s.symCenterY = silkUtil.halfHeightOnScreen;
+    s.cx = s.symCenterX;
+    s.cy = s.symCenterY;
+    s.twoCx = 2 * s.cx;
+    s.twoCy = 2 * s.cy;
+    s.initColors();
+    s.generateDrawInstructions();
+  }
+
+  /** Synthetic paths when Auto-draw is on (`docs/FEATURE.md`). */
+  function stepAutoDrawInput(): void {
+    if (!autoDrawEl.checked || userPointerHeld) return;
+    syncAutoDrawStrokeWithHud();
+    const w = silkUtil.widthOnScreen;
+    const h = silkUtil.heightOnScreen;
+    if (w < 24 || h < 24) return;
+
+    autoDrawPhase += 0.024;
+    const preset = parseAutoDrawPreset(autoDrawPresetEl.value);
+    const pad = 6;
+    const p = autoDrawPosition(preset, autoDrawPhase, w, h, pad);
+    inputX = p.x;
+    inputY = p.y;
+
+    if (!inputIsActive) {
+      startStroke();
+    }
+  }
 
   function savePng(): void {
     const w = silkCanvas.width;
@@ -518,6 +682,7 @@ export function mount(root: HTMLElement): () => void {
   function tick(): void {
     const startTime = Date.now();
     const dt = (startTime - endTime) / 16;
+    stepAutoDrawInput();
     inputFrame();
     for (let i = strokes.length - 1; i >= 0; i--) {
       const s = strokes[i]!;
@@ -527,6 +692,7 @@ export function mount(root: HTMLElement): () => void {
       }
     }
     sparks.frame(dt, sparksUtil.widthOnScreen, sparksUtil.heightOnScreen);
+    applyHeartbeatVisual();
     endTime = Date.now();
     const delay = Math.max(0, 16 - (endTime - startTime));
     timer = setTimeout(tick, delay);
@@ -556,6 +722,12 @@ export function mount(root: HTMLElement): () => void {
     silkCanvas.removeEventListener("pointermove", onPointerMove);
     silkCanvas.removeEventListener("pointerup", onPointerUp);
     silkCanvas.removeEventListener("pointercancel", onPointerUp);
+    silkCanvas.removeEventListener("lostpointercapture", onLostPointerCapture);
+    autoDrawEl.removeEventListener("change", onAutoDrawChange);
+    autoDrawPresetEl.removeEventListener("change", onAutoDrawPresetChange);
+    silkStage.style.transform = "";
+    silkCanvas.style.filter = "";
+    sparksCanvas.style.filter = "";
     savePngEl.removeEventListener("click", savePng);
   };
 }

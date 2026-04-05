@@ -1,10 +1,48 @@
-# Feature directions — where codeweive could go
+# Feature directions — codeweive
 
-This file is **not a roadmap or commitment**—only **original directions** the project could take while staying an educational, unofficial study of Silk-style generative strokes. Each idea assumes the current **canvas + `Silk` physics** core stays the reference implementation.
+This file mixes two kinds of content:
+
+1. **Shipped in the HUD** — working behavior you can try today (Auto-draw, Heartbeat), with pointers into the code.
+2. **Exploratory directions** — ideas that are **not** commitments; they assume the **canvas + `Silk` physics** core stays the reference implementation.
+
+When picking up a thread, cross-check [docs/PERFORMANCE.md](PERFORMANCE.md) for cost traps (especially spirals + high rotation counts) and keep attribution clear in any public demo that evokes the original Silk experience.
 
 ---
 
-## 1. Live, shared drawing
+## Auto-draw (autopilot) — shipped
+
+**What it does:** When **Auto-draw** is checked, the app feeds **synthetic `(x, y)`** each tick into the same **`addPoint` / `frame`** path as the pointer. One stroke stays open so ribbons accumulate like manual drawing.
+
+**HUD:** Checkbox **Auto-draw**, plus **Auto path** (enabled only while Auto-draw is on):
+
+| Preset      | Behavior (short)                                              |
+| ----------- | ------------------------------------------------------------- |
+| **Lissajous** | Wobbly figure-eight / multi-loop path (default).            |
+| **Orbit**   | Near-circular orbit around the center.                       |
+| **Drift**   | Slow wandering with layered low-frequency sines.             |
+| **Pulse**   | Radius “breathes” while the angle advances (in–out feel).   |
+
+**Interaction details:**
+
+- **Manual drawing wins:** While the pointer is down on the canvas, Auto-draw does not move the synthetic cursor (`userPointerHeld` in `src/app.ts`).
+- **Live parameters:** Mirror, rotations slider, spiral, and color-bubble palette are pushed into the **active** auto-draw stroke every frame via `syncAutoDrawStrokeWithHud()` so you can retune symmetry and colors without stopping Auto-draw.
+- **Code:** `stepAutoDrawInput()`, `syncAutoDrawStrokeWithHud()`, preset handling in `src/app.ts`; `#auto-draw`, `#auto-draw-preset` in `index.html`.
+
+**Not implemented yet (still fair game for §3 below):** noise-walk, attraction to symmetry axes, scheduled **parameter ramps** over time, multiple simultaneous autopilots.
+
+---
+
+## Heartbeat — shipped
+
+**What it does:** When **Heartbeat** is checked, the **whole silk + sparks stack** gets a slow **lub–dub** envelope: combined **CSS `scale`** on `#silk-stage` and **`brightness` / `contrast`** filters on both canvases. It is a **view-layer** pulse, not a modulation of `Silk.step()` physics.
+
+**Code:** `applyHeartbeatVisual()`, `heartbeatStrength()` in `src/app.ts`.
+
+**Not implemented yet:** BPM / depth sliders, tap tempo, or multiplying noise gain / spark rate / spring terms inside `Silk` (see §4 below).
+
+---
+
+## 1. Live, shared drawing *(exploratory)*
 
 **Idea:** Turn the canvas into a **multiplayer or broadcast** surface: other people’s strokes appear in (near) real time, or a single “performance” stream is watched live.
 
@@ -12,9 +50,11 @@ This file is **not a roadmap or commitment**—only **original directions** the 
 
 **Why here:** The simulation is already deterministic given inputs; you mainly need a thin protocol and conflict rules (who owns clear / global settings).
 
+**Status:** Not started.
+
 ---
 
-## 2. Moving, expanding world (camera & growth)
+## 2. Moving, expanding world (camera & growth) *(exploratory)*
 
 **Idea:** Break the fixed fullscreen frame: the **drawing plane moves or grows**—pan/zoom, follow the stroke, or a **slow auto-scroll** so long performances become landscapes instead of clutter.
 
@@ -22,29 +62,35 @@ This file is **not a roadmap or commitment**—only **original directions** the 
 
 **Why here:** Today everything is centered and letterboxed; decoupling “world space” from “view” is a natural next architectural step.
 
----
-
-## 3. Auto mode — the machine draws
-
-**Idea:** An **autopilot** that drives the pointer (or injects forces) so the app becomes a **generative installation**: slow loops, Lissajous-like orbits, attraction to symmetry axes, or **noise-walk** through the plane while you only tune parameters.
-
-**Moves:** Feed **synthetic `(x, y, vx, vy)`** into the same `addPoint` / `frame` loop; add presets (“orbit,” “drift,” “pulse toward center”). Optional: schedule **parameter ramps** (rotations, spiral, colors) over time.
-
-**Why here:** No new renderer required—only a scheduler and a policy that respects the existing stroke lifecycle.
+**Status:** Not started.
 
 ---
 
-## 4. Heartbeat — organic tempo in the stroke
+## 3. Auto mode — broader vision *(exploratory)*
 
-**Idea:** Tie the **whole drawing** to a slow **pulse**: line opacity, noise gain, spark rate, or spring tension **breathes** on a 60–90 BPM envelope so the piece feels alive even when the hand is still.
+The **Auto-draw** section above is the first slice of this idea. Remaining directions:
 
-**Moves:** Multiply selected scalars in `step` / `setColor` by a shared `envelope(t)` (sine or asymmetric “lub-dub”). Expose **BPM** and **depth** in the HUD; optional sync to **tap tempo** or external clock.
+- **Noise-walk** or **force injection** instead of only parametric paths.
+- **Attraction** to symmetry axes or focal points.
+- **Parameter ramps:** automate slow changes to rotations, spiral, or palette over time (could reuse the same HUD sync hook with scripted targets).
+
+**Why here:** No new renderer required—only schedulers and policies that respect the existing stroke lifecycle.
+
+---
+
+## 4. Heartbeat — physics-level pulse *(exploratory)*
+
+The **Heartbeat** section above covers the current **post-process** pulse. Deeper integration could:
+
+- Multiply selected scalars in **`Silk.step`** / **`setColor`** by a shared `envelope(t)`.
+- Modulate **spark rate** or **noise gain** with the same envelope.
+- Expose **BPM** and **depth** in the HUD; optional **tap tempo** or external clock.
 
 **Why here:** The stack already runs on a timer-driven loop; a global modulation channel is cheap to prototype and reads well with additive glow.
 
 ---
 
-## 5. Ambient sound grown from the image
+## 5. Ambient sound grown from the image *(exploratory)*
 
 **Idea:** **Procedural audio** that listens to the **current canvas** (or per-frame stats): brightness, symmetry energy, dominant hue → drives **drones, gentle arpeggios, or filtered noise** in the Web Audio API—no precomposed tracks.
 
@@ -52,8 +98,4 @@ This file is **not a roadmap or commitment**—only **original directions** the 
 
 **Why here:** Silk is already visual-music-adjacent; this repo is a clean place to experiment with **image→audio** mapping without claiming parity with the original’s licensed soundtrack.
 
----
-
-## Using this doc
-
-When picking up one of these threads, cross-check [docs/PERFORMANCE.md](PERFORMANCE.md) for cost traps (especially spirals + high rotation counts) and keep attribution clear in any public demo that still evokes the original Silk experience.
+**Status:** Not started.

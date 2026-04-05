@@ -8,7 +8,9 @@
   </head>
   <body>
     <div id="app">
-      <canvas id="silk" aria-label="Drawing canvas"></canvas>
+      <div id="silk-stage" class="silk-stage">
+        <canvas id="silk" aria-label="Drawing canvas"></canvas>
+      </div>
       <aside id="color-bubble" class="color-bubble">
         <button
           type="button"
@@ -49,6 +51,25 @@
           <span class="hud-rotations-value" id="rotations-value" aria-hidden="true">1</span>
         </label>
         <label><input id="spiral" type="checkbox" /> Spiral copies</label>
+        <label class="hud-heartbeat"
+          ><input id="heartbeat" type="checkbox" /> Heartbeat</label
+        >
+        <label class="hud-auto-draw"
+          ><input id="auto-draw" type="checkbox" /> Auto-draw</label
+        >
+        <label class="hud-auto-draw-preset">
+          <span class="hud-auto-draw-preset-label">Auto path</span>
+          <select
+            id="auto-draw-preset"
+            aria-label="Auto-draw path preset"
+            disabled
+          >
+            <option value="lissajous">Lissajous</option>
+            <option value="orbit">Orbit</option>
+            <option value="drift">Drift</option>
+            <option value="pulse">Pulse</option>
+          </select>
+        </label>
         <button id="clear" type="button">Clear</button>
         <button id="save-png" type="button">Save PNG</button>
       </div>
