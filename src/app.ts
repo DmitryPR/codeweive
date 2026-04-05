@@ -1,3 +1,7 @@
+import { createAmbientSound } from "./ambient-sound";
+import { analyzeSilkImageData, centroidSemitoneFromWeights } from "./color-music";
+import { plateCouplingFromImageData } from "./plate-coupling";
+import type { StandingWaveParams } from "./standing-waves";
 import { CanvasUtil } from "./canvas-util";
 import { SILK_COLOR_PRESETS } from "./silk-colors";
 import { Silk, type ScaleInfo, type SilkStatePartial } from "./silk";
@@ -98,6 +102,7 @@ export function mount(root: HTMLElement): () => void {
   const silkCtx = silkCanvas.getContext("2d");
   if (!silkCtx) throw new Error("silk 2d");
   const sparks = new Sparks(sparksCanvas);
+  const ambient = createAmbientSound();
 
   const defaultPalette = SILK_COLOR_PRESETS[0]!;
   let silkSettings: SilkStatePartial = {
@@ -113,6 +118,7 @@ export function mount(root: HTMLElement): () => void {
   const rotationsValueEl = root.querySelector<HTMLElement>("#rotations-value")!;
   const spiralEl = root.querySelector<HTMLInputElement>("#spiral")!;
   const heartbeatEl = root.querySelector<HTMLInputElement>("#heartbeat")!;
+  const ambientSoundEl = root.querySelector<HTMLInputElement>("#ambient-sound")!;
   const autoDrawEl = root.querySelector<HTMLInputElement>("#auto-draw")!;
   const autoDrawPresetEl = root.querySelector<HTMLSelectElement>("#auto-draw-preset")!;
   const clearEl = root.querySelector<HTMLButtonElement>("#clear")!;
@@ -183,7 +189,19 @@ export function mount(root: HTMLElement): () => void {
       currentStroke &&
       inputIsActive
     ) {
-      currentStroke.addPoint(inputX, inputY, inputX - pinputX, inputY - pinputY);
+      const ad = ambient.isEnabled() ? ambient.getDriveState() : null;
+      const sx = ad
+        ? Math.min(3.2, Math.max(-3.2, soundDitherX * 0.34))
+        : 0;
+      const sy = ad
+        ? Math.min(3.2, Math.max(-3.2, soundDitherY * 0.34))
+        : 0;
+      currentStroke.addPoint(
+        inputX + sx,
+        inputY + sy,
+        inputX - pinputX,
+        inputY - pinputY,
+      );
     }
     pinputX = inputX;
     pinputY = inputY;
@@ -259,6 +277,12 @@ export function mount(root: HTMLElement): () => void {
     inputIsActive = false;
     pinputX = null;
     pinputY = null;
+    lastSilkLuma = 0.02;
+    lastPlateMeanF = 0;
+    lastPlateRms = 0;
+    lastPlateCoverage = 0;
+    soundDitherX = 0;
+    soundDitherY = 0;
   });
 
   function updateAutoDrawPresetDisabled(): void {
@@ -278,6 +302,18 @@ export function mount(root: HTMLElement): () => void {
   autoDrawEl.addEventListener("change", onAutoDrawChange);
   autoDrawPresetEl.addEventListener("change", onAutoDrawPresetChange);
   updateAutoDrawPresetDisabled();
+
+  async function onAmbientSoundChange(): Promise<void> {
+    await ambient.setEnabled(ambientSoundEl.checked);
+  }
+  ambientSoundEl.addEventListener("change", onAmbientSoundChange);
+
+  function onAmbientVisibility(): void {
+    if (document.visibilityState === "visible") {
+      ambient.resumeIfNeeded();
+    }
+  }
+  document.addEventListener("visibilitychange", onAmbientVisibility);
 
   /** Lub–dub style envelope in [0, 1] for a ~1 rad step (tuned in applyHeartbeatVisual). */
   function heartbeatStrength(t: number): number {
@@ -678,6 +714,19 @@ export function mount(root: HTMLElement): () => void {
 
   let endTime = Date.now();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let ambientLumaAcc = 0;
+  let lastSilkLuma = 0.22;
+  let ambientColorAcc = 0;
+  let lastColorMask = 0;
+  let lastColorDistinct = 0;
+  let lastCenterGraySalt = false;
+  let lastColorWeights: readonly number[] = [1, 0, 0, 0, 0, 0, 0];
+  let lastPlateMeanF = 0;
+  let lastPlateRms = 0;
+  let lastPlateCoverage = 0;
+  /** Smoothed Lissajous offset from ambient `getDriveState` — nudges new curve points */
+  let soundDitherX = 0;
+  let soundDitherY = 0;
 
   function tick(): void {
     const startTime = Date.now();
@@ -693,6 +742,117 @@ export function mount(root: HTMLElement): () => void {
     }
     sparks.frame(dt, sparksUtil.widthOnScreen, sparksUtil.heightOnScreen);
     applyHeartbeatVisual();
+    if (ambient.isEnabled()) {
+      const motion =
+        inputIsActive || (autoDrawEl.checked && !userPointerHeld) ? 1 : 0;
+      const energy = Math.min(
+        1,
+        strokes.length * 0.07 + sparks.points.length * 0.015,
+      );
+      ambientLumaAcc++;
+      if (ambientLumaAcc >= 14) {
+        ambientLumaAcc = 0;
+        const cw = silkCanvas.width;
+        const ch = silkCanvas.height;
+        if (cw >= 8 && ch >= 8) {
+          const nw = Math.min(48, cw);
+          const nh = Math.min(48, ch);
+          const sx = Math.floor((cw - nw) / 2);
+          const sy = Math.floor((ch - nh) / 2);
+          try {
+            const id = silkCtx.getImageData(sx, sy, nw, nh);
+            let sum = 0;
+            const d = id.data;
+            for (let i = 0; i < d.length; i += 4) {
+              sum += 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+            }
+            const n = d.length / 4;
+            lastSilkLuma = n > 0 ? sum / n / 255 : 0;
+          } catch {
+            /* tainted or unsupported */
+          }
+        }
+      }
+      ambientColorAcc++;
+      if (ambientColorAcc >= 20) {
+        ambientColorAcc = 0;
+        const cw = silkCanvas.width;
+        const ch = silkCanvas.height;
+        if (cw >= 16 && ch >= 16) {
+          try {
+            const id = silkCtx.getImageData(0, 0, cw, ch);
+            const a = analyzeSilkImageData(id);
+            lastColorMask = a.mask;
+            lastColorDistinct = a.distinctCount;
+            lastCenterGraySalt = a.centerGraySalt;
+            lastColorWeights = a.presetWeights;
+
+            readHudIntoSettings();
+            const motionPlate =
+              inputIsActive || (autoDrawEl.checked && !userPointerHeld) ? 1 : 0;
+            const energyPlate = Math.min(
+              1,
+              strokes.length * 0.07 + sparks.points.length * 0.015,
+            );
+            const inkPlate = Math.min(
+              1,
+              Math.max(
+                0,
+                (lastSilkLuma - 0.02) * 5.2 +
+                  energyPlate * 0.42 +
+                  motionPlate * 0.12,
+              ),
+            );
+            const swp: StandingWaveParams = {
+              timeSec: performance.now() / 1000,
+              centroidSemitone: centroidSemitoneFromWeights(
+                a.presetWeights,
+                a.mask,
+              ),
+              distinctCount: Math.max(1, a.distinctCount),
+              symRotations: silkSettings.symNumRotations ?? 1,
+              inkStrength: inkPlate,
+            };
+            const pc = plateCouplingFromImageData(id, swp);
+            lastPlateMeanF = pc.meanF;
+            lastPlateRms = pc.rmsF;
+            lastPlateCoverage = pc.coverage;
+          } catch {
+            /* tainted or unsupported */
+          }
+        }
+      }
+      readHudIntoSettings();
+      ambient.update({
+        motion,
+        energy,
+        canvasBrightness: lastSilkLuma,
+        colorPresetMask: lastColorMask,
+        colorDistinctCount: lastColorDistinct,
+        centerGraySalt: lastCenterGraySalt,
+        colorPresetWeights: lastColorWeights,
+        symRotations: silkSettings.symNumRotations ?? 1,
+        plateMeanField: lastPlateMeanF,
+        plateRms: lastPlateRms,
+        plateCoverage: lastPlateCoverage,
+      });
+      const drive = ambient.getDriveState();
+      if (drive) {
+        const wob = 1.05 + drive.ripple * 3.4;
+        const melScale = drive.melodyHz * 0.00062;
+        const tx =
+          Math.sin(drive.flowPhase * 0.52) * wob +
+          Math.sin(drive.flowPhase * 1.03 + melScale) * drive.ripple * 1.05;
+        const ty =
+          Math.cos(drive.flowPhase * 0.49) * wob * 0.9 +
+          Math.cos(drive.flowPhase * 0.98 + melScale * 1.1) * drive.ripple * 0.95;
+        soundDitherX = soundDitherX * 0.83 + tx * 0.17;
+        soundDitherY = soundDitherY * 0.83 + ty * 0.17;
+      } else {
+        soundDitherX *= 0.87;
+        soundDitherY *= 0.87;
+      }
+    }
     endTime = Date.now();
     const delay = Math.max(0, 16 - (endTime - startTime));
     timer = setTimeout(tick, delay);
@@ -725,6 +885,9 @@ export function mount(root: HTMLElement): () => void {
     silkCanvas.removeEventListener("lostpointercapture", onLostPointerCapture);
     autoDrawEl.removeEventListener("change", onAutoDrawChange);
     autoDrawPresetEl.removeEventListener("change", onAutoDrawPresetChange);
+    ambientSoundEl.removeEventListener("change", onAmbientSoundChange);
+    document.removeEventListener("visibilitychange", onAmbientVisibility);
+    ambient.dispose();
     silkStage.style.transform = "";
     silkCanvas.style.filter = "";
     sparksCanvas.style.filter = "";

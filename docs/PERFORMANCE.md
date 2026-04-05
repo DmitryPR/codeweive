@@ -74,10 +74,22 @@ The original bundles **Knockout, jQuery, undo snapshots, multiple canvases, reco
 | Many strokes without clearing | Large \(S\); linear cost in concurrent silks. |
 | 4K / high `devicePixelRatio` | More pixels per `stroke()`; thermal throttling on laptops. |
 | Background tab | Timer throttling; motion and input feel out of sync. |
+| **Ambient sound** enabled | Periodic **`getImageData`** (small center crop ~every 14 ticks; **full backing store** ~every 20 ticks for color + plate scan). Strided JS loops over pixels; cost rises with **HiDPI** resolution. |
 
 ---
 
-## 7. Mitigations (not implemented here)
+## 7. Ambient sound readback
+
+When **Ambient sound** is on, [`src/app.ts`](../src/app.ts) reads the silk canvas from the CPU:
+
+- **Luma** — small **center** region (up to 48×48 in **backing-store** pixels), ~every **14** timer ticks.
+- **Color + plate coupling** — **full** `getImageData(0, 0, width, height)` ~every **20** ticks; [`color-music`](../src/color-music.ts) and [`plate-coupling`](../src/plate-coupling.ts) each walk a **strided** grid (separate passes over the same buffer).
+
+Mitigations if this shows up in profiling: increase tick intervals, shrink the full-canvas pass to a **downscaled copy** via draw-to-temp-canvas, or move analysis to a **Worker** (transfer `ImageData`).
+
+---
+
+## 8. Mitigations (not implemented here)
 
 Ideas for a **production** or **performance** fork (listed for learning only):
 
@@ -90,6 +102,6 @@ Ideas for a **production** or **performance** fork (listed for learning only):
 
 ---
 
-## 8. Summary
+## 9. Summary
 
 The port is **faithful to an algorithm that is inherently expensive**: **many** semi-transparent vector strokes per frame with **additive** blending and **optional massive instancing**. It is appropriate for **learning and desktop demos**; it is **not** tuned for worst-case mobile or “unlimited” spiral arms without degradation.

@@ -54,6 +54,7 @@ body {
   user-select: none;
 }
 #hud label.hud-heartbeat,
+#hud label.hud-ambient-sound,
 #hud label.hud-auto-draw {
   opacity: 0.95;
 }

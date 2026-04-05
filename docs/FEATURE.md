@@ -2,7 +2,7 @@
 
 This file mixes two kinds of content:
 
-1. **Shipped in the HUD** — working behavior you can try today (Auto-draw, Heartbeat), with pointers into the code.
+1. **Shipped in the HUD** — working behavior you can try today (Auto-draw, Heartbeat, Ambient sound), with pointers into the code.
 2. **Exploratory directions** — ideas that are **not** commitments; they assume the **canvas + `Silk` physics** core stays the reference implementation.
 
 When picking up a thread, cross-check [docs/PERFORMANCE.md](PERFORMANCE.md) for cost traps (especially spirals + high rotation counts) and keep attribution clear in any public demo that evokes the original Silk experience.
@@ -41,6 +41,51 @@ When picking up a thread, cross-check [docs/PERFORMANCE.md](PERFORMANCE.md) for 
 **Not implemented yet:** BPM / depth sliders, tap tempo, or multiplying noise gain / spark rate / spring terms inside `Silk` (see §4 below).
 
 ---
+
+## Ambient sound — shipped
+
+**What it is:** Optional **procedural** audio (**Web Audio API**, **no samples**): a **water-register** texture meant to feel like a **quiet, rippling surface** — deep **sines**, **filtered noise**, **standing-wave** math, and a **soft delayed phrase** line. A **master low-pass** keeps the mix in a **subdued band** (~0.5–1.1 kHz) so nothing reads as brittle treble. Runs on **static hosting** (e.g. GitHub Pages).
+
+**HUD:** Checkbox **Ambient sound**. Turning it on is a **user gesture** → `AudioContext.resume()` for autoplay policy. Tab **visibility** → `resumeIfNeeded()` so audio can resume when the page returns to the foreground.
+
+### Signal flow (high level)
+
+1. **Vision → numbers** — `getImageData` (throttled) + [`src/color-music.ts`](../src/color-music.ts): **preset mask**, **soft `presetWeights`**, distinct colors, gray-center hint, etc.
+2. **Harmony** — Each HUD preset is a **fixed major scale degree** (1…7): semitone steps from tonic `[0,2,4,5,7,9,11]`. **Tonic pitch class** **transposes** when **two or more** colors are active (rounded weighted mean of their “C-key” reference chroma). **One** color only → tonic **0** so solo strokes keep the same **absolute** pitches as before. Weighted **centroid** (fractional semitone) then glides the **flow triad** (½× sub, root, fifth at **C2-class** base). **Melody pool** uses the **transposed** pitch classes; phrase **tempo** still responds to activity and **plate** overlap.
+3. **Standing-wave field** — [`src/standing-waves.ts`](../src/standing-waves.ts): rectangular **mode** shapes + weak **hex / Faraday-like** term, driven by centroid, **distinct color count**, **HUD rotations**, **ink** (luma + motion + energy), and **time**. Orbiting **(u, v)** samples feed **breathing** gains, **delay**, and **fluid** dynamics.
+4. **Strokes as plate** — [`src/plate-coupling.ts`](../src/plate-coupling.ts): on the same full-canvas pass as color analysis, **strided** ink × field overlap → **`meanF`**, **`rmsF`**, **`coverage`** → detune, noise, phrase bias, low-pass nudges (still dark overall).
+5. **Melody + ripple** — [`src/ambient-phrases.ts`](../src/ambient-phrases.ts) phrase book; **lead** sine through **delay / feedback**; second sine a **perfect fifth** above lead (very quiet), same bus.
+6. **Drawing feedback** — [`src/ambient-sound.ts`](../src/ambient-sound.ts) exposes **`getDriveState()`** (`flowPhase`, `melodyHz`, `ripple`, `baseFlowHz`). [`src/app.ts`](../src/app.ts) applies a **smoothed Lissajous offset** (a few logical px) to **`addPoint`** while ambient is on; pointer **velocity** stays real so the line **shimmers** without fighting the hand.
+
+**Gray center:** When the **center** reads as the **gray** preset, the **middle flow** layer gets a small **gain swell** only.
+
+**Sampling:** Center **luma** ~every **14** ticks (small crop); **full canvas** ~every **20** ticks for color **and** plate coupling (one `getImageData` shared). Cost scales with backing-store size — see [PERFORMANCE.md](PERFORMANCE.md).
+
+| Module | Role |
+|--------|------|
+| [`src/color-music.ts`](../src/color-music.ts) | `analyzeSilkImageData`, `presetWeights`, centroid, pool helpers |
+| [`src/standing-waves.ts`](../src/standing-waves.ts) | `sampleStandingWaveField`, `sampleStandingWaveVelocity` |
+| [`src/plate-coupling.ts`](../src/plate-coupling.ts) | `plateCouplingFromImageData` |
+| [`src/ambient-phrases.ts`](../src/ambient-phrases.ts) | Phrase degree patterns |
+| [`src/ambient-sound.ts`](../src/ambient-sound.ts) | Graph, modulation, `getDriveState` |
+| [`src/app.ts`](../src/app.ts) | `#ambient-sound`, hints, sound dither on stroke |
+
+**Phrase / melody details:** [docs/AMBIENT-MELODIES.md](AMBIENT-MELODIES.md).
+
+### Next steps (ambient)
+
+| Area | Idea |
+|------|------|
+| **Controls** | HUD **wet/dry**, **master level**, optional **brightness cap** for low-pass; mute fluid or lead independently. |
+| **Harmony** | Treat **non-preset** (blended) RGB as **continuous pitch** or **vector in pitch space**, not only nearest swatch + weights. |
+| **Plate** | Stronger or **frequency-selective** coupling (e.g. project ink onto a few mode shapes); optional **Worker** for `getImageData` + scan. |
+| **Melody** | Third **ripple** voice (e.g. major third), **staggered** phrase echo, or **user-picked** scale / root; **seed** for reproducible sessions. |
+| **Drawing ↔ sound** | Toggle **sound-reactive dither** strength; apply `getDriveState` to **auto-draw** path or **noise** in `Silk` (careful with UX). |
+| **Tech** | Optional **Tone.js** or **AudioWorklet** for richer routing (still static-hostable); **record** mix to WAV for export. |
+| **Docs / QA** | Short **listening** checklist (headphones, plate coverage, rotations); compare CPU with ambient **on vs off** on large canvases. |
+
+---
+
 
 ## 1. Live, shared drawing *(exploratory)*
 
@@ -90,12 +135,12 @@ The **Heartbeat** section above covers the current **post-process** pulse. Deepe
 
 ---
 
-## 5. Ambient sound grown from the image *(exploratory)*
+## 5. Ambient sound — beyond the current ship *(exploratory)*
 
-**Idea:** **Procedural audio** that listens to the **current canvas** (or per-frame stats): brightness, symmetry energy, dominant hue → drives **drones, gentle arpeggios, or filtered noise** in the Web Audio API—no precomposed tracks.
+The **Ambient sound** section above describes what is **implemented** today (standing-wave + plate + phrase + closed loop). This section is for **larger** experiments that would **extend** that design.
 
-**Moves:** Downsample the composite to a small grid or read back **histograms** on a throttled interval; map aggregates to **oscillator frequencies**, filter cutoffs, or granular playback of a tiny noise buffer. Keep levels conservative and **user-mutable** (mute, seed, “intensity”).
+**Idea:** Richer **image→audio** maps: **histograms**, **polar energy** around the symmetry center, **optical flow** from frame differencing, or **granular** textures driven by pixel statistics — still without claiming parity with the original site’s **licensed** soundtrack ([Mat Jarvis](http://microscopics.co.uk/) on the live Silk).
 
-**Why here:** Silk is already visual-music-adjacent; this repo is a clean place to experiment with **image→audio** mapping without claiming parity with the original’s licensed soundtrack.
+**Moves:** See **Next steps (ambient)** in the shipped section for concrete knobs (controls, extra voices, Workers). Bigger leaps: **multi-track** export, **MIDI** side-channel from the same analysis, or **collaborative** sessions where remote strokes feed one shared ambient bus.
 
-**Status:** Not started.
+**Status:** **Shipped:** preset + weight analysis, luma, full-canvas strided plate coupling, procedural graph, `getDriveState` → stroke dither. **Not started:** histogram-first mapping, MIDI, recording UI.

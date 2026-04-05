@@ -100,7 +100,7 @@ Tape = time-indexed recording of method calls for replay; Recorder ties into und
 
 - **Run:** from repo root, `npm install` then `npm run dev` (Vite, default port **5174** per `vite.config.ts`). Open the printed localhost URL in a browser.
 - **Build:** `npm run build` emits `dist/`; `public/vendor/noise.js` is copied as static assets (same Perlin implementation as the live site).
-- **Implementation map:** `index.html` (markup), `src/silk.ts` (physics + symmetry + stroke), `src/canvas-util.ts` (HiDPI), `src/sparks.ts` + overlay canvas in `src/app.ts`, orchestration and **~16 ms `setTimeout` loop** like the original main tick.
+- **Implementation map:** `index.html` (markup), `src/silk.ts` (physics + symmetry + stroke), `src/canvas-util.ts` (HiDPI), `src/sparks.ts` + sparks canvas in `src/app.ts`, **optional ambient** (`src/ambient-sound.ts`, `src/color-music.ts`, `src/standing-waves.ts`, `src/plate-coupling.ts`, `src/ambient-phrases.ts`), orchestration and **~16 ms `setTimeout` loop** like the original main tick. Ambient details: [FEATURE.md](FEATURE.md), [AMBIENT-MELODIES.md](AMBIENT-MELODIES.md).
 
 ## Visual QA vs live Silk and reference art
 
