@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>codeweive</title>
+    <script src="/vendor/noise.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="silk" aria-label="Drawing canvas"></canvas>
+      <aside id="color-bubble" class="color-bubble">
+        <button
+          type="button"
+          id="color-bubble-toggle"
+          class="color-bubble-toggle"
+          title="Colors — click to open, drag to move"
+          aria-expanded="false"
+          aria-controls="color-bubble-panel"
+        ></button>
+        <div
+          id="color-bubble-panel"
+          class="color-bubble-panel"
+          role="region"
+          aria-label="Color presets"
+          hidden
+        >
+          <div class="color-bubble-grab" title="Drag to move" aria-hidden="true"></div>
+          <p class="color-bubble-hint">Click a swatch, or drag onto another to blend.</p>
+          <div id="color-swatch-ring" class="color-swatch-ring"></div>
+        </div>
+      </aside>
+      <div id="hud">
+        <label><input id="mirror" type="checkbox" checked /> Mirror</label>
+        <label>
+          Rotations
+          <input id="rotations" type="number" min="1" max="12" value="1" />
+        </label>
+        <label><input id="spiral" type="checkbox" /> Spiral copies</label>
+        <button id="clear" type="button">Clear</button>
+        <button id="save-png" type="button">Save PNG</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
