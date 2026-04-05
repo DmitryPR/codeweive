@@ -33,7 +33,7 @@ npm install
 npm run dev
 ```
 
-Then open the URL shown in the terminal (port **5174**). The canvas uses the same **`noise()`** implementation as the live site (`public/vendor/noise.js`). **Left bubble:** round button **opens** presets (click without moving) or **drags** the whole bubble; with the panel open, drag the **grip** at the top too. Swatches match the original at [http://weavesilk.com](http://weavesilk.com)—click or **drag between swatches** to blend colors. Bottom HUD: mirror, rotations, spiral, clear, Save PNG.
+Then open the URL shown in the terminal (port **5174**). The canvas uses the same **`noise()`** implementation as the live site (`public/vendor/noise.js`). **Left bubble:** round button **opens** presets (click without moving) or **drags** the whole bubble; with the panel open, drag the **grip** at the top too. Swatches match the original at [http://weavesilk.com](http://weavesilk.com)—click or **drag between swatches** to blend colors. Bottom HUD: mirror, rotations, spiral, clear, **Save as** (native / **HD 1920×1080** / **4K 3840×2160**), Save PNG.
 
 ```bash
 npm run build   # output in dist/

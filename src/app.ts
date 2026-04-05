@@ -123,6 +123,7 @@ export function mount(root: HTMLElement): () => void {
   const autoDrawPresetEl = root.querySelector<HTMLSelectElement>("#auto-draw-preset")!;
   const clearEl = root.querySelector<HTMLButtonElement>("#clear")!;
   const savePngEl = root.querySelector<HTMLButtonElement>("#save-png")!;
+  const saveResolutionEl = root.querySelector<HTMLSelectElement>("#save-resolution")!;
   const colorBubble = root.querySelector<HTMLElement>("#color-bubble")!;
   const colorToggle = root.querySelector<HTMLButtonElement>("#color-bubble-toggle")!;
   const colorPanel = root.querySelector<HTMLElement>("#color-bubble-panel")!;
@@ -382,38 +383,19 @@ export function mount(root: HTMLElement): () => void {
     }
   }
 
-  function savePng(): void {
-    const w = silkCanvas.width;
-    const h = silkCanvas.height;
-    if (w === 0 || h === 0) return;
-    const out = document.createElement("canvas");
-    out.width = w;
-    out.height = h;
-    const octx = out.getContext("2d");
-    if (!octx) return;
-    octx.drawImage(silkCanvas, 0, 0);
-    if (sparksCanvas.width === w && sparksCanvas.height === h) {
-      octx.drawImage(sparksCanvas, 0, 0);
-    } else {
-      octx.drawImage(
-        sparksCanvas,
-        0,
-        0,
-        sparksCanvas.width,
-        sparksCanvas.height,
-        0,
-        0,
-        w,
-        h,
-      );
-    }
-    out.toBlob(
+  const EXPORT_HD_W = 1920;
+  const EXPORT_HD_H = 1080;
+  const EXPORT_4K_W = 3840;
+  const EXPORT_4K_H = 2160;
+
+  function downloadCanvasPng(canvas: HTMLCanvasElement, filename: string): void {
+    canvas.toBlob(
       (blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `silk-port-${Date.now()}.png`;
+        a.download = filename;
         a.rel = "noopener";
         document.body.appendChild(a);
         a.click();
@@ -423,6 +405,75 @@ export function mount(root: HTMLElement): () => void {
       "image/png",
       1,
     );
+  }
+
+  /**
+   * Composite silk + sparks into a canvas. Native = backing-store pixels 1:1.
+   * HD / 4K = fixed output size, uniform scale, letterboxed on black (16:9 frame).
+   */
+  function buildExportCanvas(mode: string): HTMLCanvasElement | null {
+    const sw = silkCanvas.width;
+    const sh = silkCanvas.height;
+    if (sw === 0 || sh === 0) return null;
+
+    const out = document.createElement("canvas");
+    let outW: number;
+    let outH: number;
+    let dx = 0;
+    let dy = 0;
+    let dw = sw;
+    let dh = sh;
+
+    if (mode === "hd") {
+      outW = EXPORT_HD_W;
+      outH = EXPORT_HD_H;
+    } else if (mode === "4k") {
+      outW = EXPORT_4K_W;
+      outH = EXPORT_4K_H;
+    } else {
+      outW = sw;
+      outH = sh;
+    }
+
+    out.width = outW;
+    out.height = outH;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+
+    if (mode === "hd" || mode === "4k") {
+      octx.fillStyle = "#000000";
+      octx.fillRect(0, 0, outW, outH);
+      const scale = Math.min(outW / sw, outH / sh);
+      dw = Math.max(1, Math.round(sw * scale));
+      dh = Math.max(1, Math.round(sh * scale));
+      dx = Math.floor((outW - dw) / 2);
+      dy = Math.floor((outH - dh) / 2);
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = "high";
+    }
+
+    octx.drawImage(silkCanvas, 0, 0, sw, sh, dx, dy, dw, dh);
+    octx.drawImage(
+      sparksCanvas,
+      0,
+      0,
+      sparksCanvas.width,
+      sparksCanvas.height,
+      dx,
+      dy,
+      dw,
+      dh,
+    );
+    return out;
+  }
+
+  function savePng(): void {
+    const mode = saveResolutionEl.value;
+    const out = buildExportCanvas(mode);
+    if (!out) return;
+    const tag =
+      mode === "hd" ? "hd1080" : mode === "4k" ? "4k2160" : "native";
+    downloadCanvasPng(out, `silk-port-${tag}-${Date.now()}.png`);
   }
 
   savePngEl.addEventListener("click", savePng);
