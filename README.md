@@ -41,4 +41,4 @@ npm run build   # output in dist/
 
 Deployment (including **GitHub Pages**): [docs/DEPLOY.md](docs/DEPLOY.md).
 
-See [docs/SITE-BREAKDOWN.md](docs/SITE-BREAKDOWN.md) for site stack notes and visual QA checklist, [docs/ALGORITHM.md](docs/ALGORITHM.md) for the mathematical model, and [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for scalability limits and cost drivers.
+See [docs/SITE-BREAKDOWN.md](docs/SITE-BREAKDOWN.md) for site stack notes and visual QA checklist, [docs/ALGORITHM.md](docs/ALGORITHM.md) for the mathematical model, [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for scalability limits and cost drivers, and [docs/FEATURE.md](docs/FEATURE.md) for **possible future directions** (live drawing, moving canvas, auto mode, pulse, image-driven audio)—ideas only, not a roadmap.
